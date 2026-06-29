@@ -15,17 +15,10 @@ datasource db {
 
 enum ResourceType {
   HOT_WATER
-  COLD_WATER
   HEATING
   ELECTRICITY
 }
 
-enum SessionStatus {
-  DRAFT
-  IN_PROGRESS
-  COMPLETED
-  EXPORTED
-}
 
 enum ReadingStatus {
   OK
@@ -40,156 +33,69 @@ enum ReadingSource {
 }
 
 
-model Building {
-  id        String   @id @default(cuid())
 
-  dahId     String?  @unique
+model Premises {
+  id        String @id @default(cuid())
+
+  dahId     String @unique
+
   name      String
+  number    String?
 
-  premises  Premises[]
+  apartmentType         String?
+  apartmentNumber       String?
+
+  sectionType           String?
+  sectionNumber         String?
+
+  buildingId            String?
+  buildingNumber        String?
+
+  floor                 Int?
+
+  counters  Meter[]
 
   createdAt DateTime @default(now())
 }
 
-model Premises {
-  id                    String   @id @default(cuid())
-
-  dahId                 String   @unique
-
-  buildingId            String?
-  building              Building? @relation(fields: [buildingId], references: [id])
-
-  name                  String
-
-  personalAccountNumber String?
-
-  apartmentNumber       String?
-  apartmentType         String?
-
-  sectionNumber         String?
-  sectionType           String?
-
-  floor                 Int?
-
-  size                  Float?
-
-  debtor                Boolean?
-  printReceipt          Boolean?
-
-  meters                Meter[]
-
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@index([apartmentNumber])
-}
-
 model Meter {
-  id                    String       @id @default(cuid())
+  id        String @id @default(cuid())
 
-  dahId                 String       @unique
+  dahId     String @unique
 
-  premisesId            String
-  premises              Premises     @relation(fields: [premisesId], references: [id])
+  premisesId String
+  premises   Premises @relation(fields: [premisesId], references: [id])
 
-  name                  String?
+  name      String
+  resourceType String // "HOT_WATER", "HEATING"
+  readings    Reading[] 
 
-  resourceType          ResourceType
-
-  dateInitialIndication DateTime?
-
-  history               MeterHistory[]
-
-  collectedReadings     CollectedReading[]
-
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  @@index([resourceType])
+  createdAt DateTime @default(now())
 }
 
-model MeterHistory {
-  id            String        @id @default(cuid())
 
-  meterId       String
-  meter         Meter         @relation(fields: [meterId], references: [id])
 
-  period        String
+model Reading {
+  id        String @id @default(cuid())
 
-  startValue    Float
-  endValue      Float
-  consumed      Float
+  meterId   String
+  meter     Meter @relation(fields: [meterId], references: [id])
 
-  source        ReadingSource @default(DAH)
+  period    String
 
-  importedAt    DateTime @default(now())
+  previous  Float
+  current   Float
+  diff      Float
+  source    ReadingSource?
+  status    ReadingStatus?
 
-  @@index([meterId])
-  @@index([period])
-  @@unique([meterId, period])
+  createdAt DateTime @default(now())
+
+  @@unique([meterId, period], name: "meterId_period")
 }
-
-model CollectionSession {
-  id            String          @id @default(cuid())
-
-  name          String
-
-  resourceType  ResourceType
-
-  status        SessionStatus   @default(DRAFT)
-
-  readings      CollectedReading[]
-
-  createdAt     DateTime @default(now())
-  completedAt   DateTime?
-}
-
-model CollectedReading {
-  id              String          @id @default(cuid())
-
-  sessionId       String
-  session         CollectionSession @relation(fields: [sessionId], references: [id])
-
-  meterId         String
-  meter           Meter           @relation(fields: [meterId], references: [id])
-
-  previousValue   Float
-
-  enteredValue    Float
-
-  difference      Float
-
-  status          ReadingStatus   @default(OK)
-
-  comment         String?
-
-  createdAt       DateTime @default(now())
-
-  exportQueue     ExportQueue?
-
-  @@index([sessionId])
-  @@index([meterId])
-}
-
 enum ExportStatus {
   PENDING
   SENT
   ERROR
 }
 
-model ExportQueue {
-  id                  String @id @default(cuid())
-
-  readingId           String @unique
-  reading             CollectedReading @relation(fields: [readingId], references: [id])
-
-  status              ExportStatus @default(PENDING)
-
-  attempts            Int @default(0)
-
-  error               String?
-
-  exportedAt          DateTime?
-
-  createdAt           DateTime @default(now())
-}
