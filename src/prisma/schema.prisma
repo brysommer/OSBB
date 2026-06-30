@@ -32,6 +32,12 @@ enum ReadingSource {
   COLLECTED
 }
 
+enum ExportStatus {
+    PENDING
+    SENT
+    ERROR
+}
+
 
 
 model Premises {
@@ -89,13 +95,14 @@ model Reading {
   source    ReadingSource?
   status    ReadingStatus?
 
+  exportedAt DateTime?
+
+  exportStatus ExportStatus?
+
+  exportError String?
+
   createdAt DateTime @default(now())
 
   @@unique([meterId, period], name: "meterId_period")
-}
-enum ExportStatus {
-  PENDING
-  SENT
-  ERROR
 }
 

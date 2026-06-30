@@ -11,6 +11,7 @@ import { getBuildings, getSections, buildQueue } from '../services/queue.service
 
 import { ResourceType } from '@prisma/client';
 import dotenv from 'dotenv';
+import { registerPutReadingsHandler } from './handlers/putReadings.handler';
 
 dotenv.config();
 
@@ -133,3 +134,5 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, '🏁 Обхід завершено. Сесію очищено.');
     }
 });
+
+registerPutReadingsHandler(bot);
