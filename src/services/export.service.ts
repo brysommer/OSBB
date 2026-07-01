@@ -1,3 +1,4 @@
+import { delay } from '@/scripts/dalay';
 import {
     getReadingsForExport,
     markReadingError,
@@ -82,6 +83,8 @@ export async function exportReadings({
             success,
             failed,
         });
+
+        await delay(2000);
     }
 
     await onFinish?.({
