@@ -1,4 +1,4 @@
-import { delay } from '@/scripts/dalay';
+import { delay } from '../scripts/dalay';
 import {
     getReadingsForExport,
     markReadingError,
