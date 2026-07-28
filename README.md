@@ -1,266 +1,199 @@
-# FUELBOT - Telegram Fuel Management System
+# OSBB Meter Bot
 
-A comprehensive Telegram-based solution for fuel expense tracking and fleet management analytics.
+Telegram-бот для організації обходу лічильників у житлових комплексах, перевірки самостійно поданих показників і передачі підтверджених даних у ДАХ.
 
-## 🚀 Overview
+## Можливості
 
-FUELBOT is a Node.js application that provides automated fuel expense tracking through Telegram bots. It allows drivers to easily register fuel purchases and administrators to generate detailed reports and analytics.
+- розмежування доступу операторів до житлових комплексів;
+- вибір ЖК, будинку, режиму обходу та під’їзду;
+- автоматичне визначення ресурсів, доступних у вибраному будинку;
+- підтримка гарячої води, підігріву та електроенергії;
+- маршрут згори донизу без зайвих переходів між щитками;
+- перевірка показників, поданих мешканцями самостійно;
+- збереження історії всіх подач за один розрахунковий період;
+- експорт найновіших підтверджених показників у ДАХ;
+- окремий зашифрований API-ключ ДАХ для кожного ЖК;
+- друк QR-етикеток на принтері Zebra.
 
-## ✨ Features
+## Логіка обходу
 
-### For Drivers
-- **Easy Registration**: Share phone number and register vehicle details
-- **One-Click Fuel Recording**: Simple button to start fuel registration process
-- **Step-by-Step Input**: Guided process for volume, price, odometer, and comments
-- **Photo Upload**: Automatic forwarding of odometer and receipt photos to admin group
-- **Persistent Interface**: "Заправка⛽️" button always available
+Оператор запускає обхід і послідовно обирає:
 
-### For Administrators
-- **Driver Management**: View all registered drivers
-- **Periodic Statistics**: Weekly, monthly, and all-time reports
-- **Financial Analytics**: Cost per kilometer, fuel consumption analysis
-- **CSV Export**: Detailed reports in CSV format with all transaction data
-- **Real-time Logging**: All fuel records automatically logged to admin group
-
-## 🏗️ Architecture
-
-- **Backend**: Node.js with TypeScript
-- **Database**: PostgreSQL with Prisma ORM
-- **Bots**: Three separate Telegram bots (main, logger, admin)
-- **Reports**: CSV export with UTF-8 encoding support
-
-## 📊 Database Schema
-
-### Driver Model
-```prisma
-model Driver {
-  id         Int          @id @default(autoincrement())
-  firstName  String?
-  phone      String       @unique
-  carNumber  String       @unique
-  tankVolume Int?
-  chatId     BigInt       @unique
-  step       Int
-  createdAt  DateTime     @default(now())
-  fuelRecords FuelRecord[]
-}
+```text
+ЖК → Будинок → Режим обходу → Під’їзд
 ```
 
-### FuelRecord Model
-```prisma
-model FuelRecord {
-  id          Int      @id @default(autoincrement())
-  driverId    Int
-  driver      Driver   @relation(fields: [driverId], references: [id])
-  volume      Float    // Fuel volume in liters
-  price       Float    // Price per liter
-  odometr     BigInt?  // Odometer reading
-  total       Float    // Total cost (volume * price)
-  date        DateTime @default(now())
-  createdAt   DateTime @default(now())
-  comment     String?  // Optional comment
-}
+Після вибору будинку бот перевіряє, які ресурси реально присутні, та пропонує лише доречні режими:
+
+- лише гаряча вода;
+- гаряча вода та підігрів;
+- усі наявні ресурси.
+
+Черга формується в такому порядку:
+
+```text
+поверх згори донизу
+  → усі лічильники гарячої води
+  → усі лічильники підігріву
+  → усі лічильники електроенергії
+  → наступний поверх
 ```
 
-## 🚀 Quick Start
+Лічильники, вже підтверджені оператором у поточному періоді, повторно в чергу не потрапляють.
 
-### Prerequisites
-- Node.js (v16 or higher)
-- PostgreSQL database
-- Telegram Bot API tokens
+## Самостійна подача мешканцем
 
-### Installation
+Самостійні показники зберігаються з джерелом `YOURSELF`.
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/brysommer/FUELBOT.git
-   cd FUELBOT
-   ```
+Під час обходу бот показує оператору найновішу непідтверджену подачу та пропонує:
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+- **Прийняти** — створюється окремий запис `COLLECTED` із тим самим значенням;
+- **Коригувати** — оператор вводить уточнений показник, який зберігається як `COLLECTED`.
 
-3. **Set up environment variables**
-   Create a `.env` file in the root directory:
-   ```env
-   # Database
-   DATABASE_URL="postgresql://username:password@localhost:5432/fuelbot"
-   
-   # Telegram Bot Tokens
-   TELEGRAM_BOT_TOKEN="your_main_bot_token"
-   TELEGRAM_LOGGER_BOT_TOKEN="your_logger_bot_token"
-   ADMIN_BOT_BOT="your_admin_bot_token"
-   
-   # Logger Group
-   LOGGER_CHAT="your_logger_group_chat_id"
-   ```
+Початковий запис `YOURSELF` не видаляється. Це дозволяє аналізувати частку квартир, які почали передавати показники без участі оператора.
 
-4. **Set up the database**
-   ```bash
-   # Generate Prisma client
-   npx prisma generate
-   
-   # Run database migrations
-   npx prisma db push
-   ```
+## Експорт у ДАХ
 
-5. **Create temporary directory**
-   ```bash
-   mkdir tmp
-   ```
+Команда `/putreadings` запускає сценарій:
 
-6. **Start the application**
-   ```bash
-   # Development mode
-   npm run dev
-   
-   # Production mode
-   npm run build
-   npm start
-   ```
-
-## 📱 Bot Setup
-
-### Main Bot (Driver Interface)
-- Handles driver registration and fuel recording
-- Commands: `/start`, `/zapravka`
-- Features: Contact sharing, step-by-step input, photo forwarding
-
-### Logger Bot
-- Forwards fuel records and photos to admin group
-- Provides real-time logging of all activities
-- Sends formatted messages with driver and fuel information
-
-### Admin Bot
-- Provides administrative interface
-- Commands: `/start`
-- Features: Driver selection, statistics, CSV export
-
-## 🔧 Usage
-
-### Driver Registration Process
-1. Driver starts bot with `/start`
-2. Shares phone number via "Надіслати контакт" button
-3. Enters car number
-4. Specifies tank volume
-5. Registration complete - "Заправка⛽️" button appears
-
-### Fuel Recording Process
-1. Driver clicks "Заправка⛽️" button
-2. Enters fuel volume (liters)
-3. Enters price per liter
-4. Enters current odometer reading
-5. Adds optional comment
-6. Can send photos of odometer and receipt
-7. Record automatically logged to admin group
-
-### Admin Statistics
-1. Admin starts admin bot with `/start`
-2. Selects driver from list
-3. Chooses time period (week/month/all-time)
-4. Views calculated statistics:
-   - Total fuel consumption
-   - Total costs
-   - Distance traveled
-   - Cost per kilometer
-   - Average fuel consumption (L/100km)
-5. Option to export data to CSV
-
-## 📊 Analytics Formulas
-
-- **Distance**: `current_odometer - previous_odometer`
-- **Total Cost**: `liters × price_per_liter`
-- **Cost per Kilometer**: `total_cost / distance`
-- **Fuel Consumption**: `(liters / distance) × 100`
-
-## 🛠️ Development
-
-### Project Structure
-```
-FUELBOT/
-├── src/
-│   ├── index.ts              # Main application entry
-│   ├── fuel-record.ts        # Fuel recording logic
-│   ├── forward-pictures.ts   # Photo forwarding
-│   ├── admin-bot.ts          # Admin interface
-│   ├── export-csv.ts         # CSV export functionality
-│   ├── lib/
-│   │   └── prisma.ts         # Database client
-│   └── prisma/
-│       └── schema.prisma     # Database schema
-├── package.json
-├── tsconfig.json
-└── README.md
+```text
+ЖК → Будинок → Період → Підтвердження → Експорт
 ```
 
-### Available Scripts
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm start` - Start production server
-- `npm test` - Run tests (not implemented)
+Для кожного лічильника експортується лише найновіший запис `COLLECTED` за вибраний період. API-ключ вибирається за ID житлового комплексу, тому однакові номери будинків у різних ЖК не конфліктують.
 
-### Environment Variables
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes |
-| `TELEGRAM_BOT_TOKEN` | Main bot token | Yes |
-| `TELEGRAM_LOGGER_BOT_TOKEN` | Logger bot token | Yes |
-| `ADMIN_BOT_BOT` | Admin bot token | Yes |
-| `LOGGER_CHAT` | Admin group chat ID | Yes |
+## Команди бота
 
-## 🔒 Security Considerations
+- `/start` — головне меню та початок роботи;
+- `/putreadings` — передача підтверджених показників у ДАХ;
+- `/cancel` — скасування поточної операції.
 
-- All sensitive data stored in environment variables
-- Database connections use secure protocols
-- Telegram API tokens should be kept confidential
-- Regular database backups recommended
-- Monitor bot access and usage
+## Технології
 
-## 🐛 Troubleshooting
+- Node.js;
+- TypeScript;
+- PostgreSQL;
+- Prisma ORM;
+- node-telegram-bot-api;
+- Axios;
+- Zebra ZPL.
 
-### Common Issues
+## Встановлення
 
-1. **Database Connection Error**
-   - Verify DATABASE_URL in .env file
-   - Ensure PostgreSQL is running
-   - Check database permissions
+Вимоги:
 
-2. **Bot Not Responding**
-   - Verify bot tokens are correct
-   - Check internet connection
-   - Ensure bots are not blocked
+- Node.js 20 або новіший;
+- PostgreSQL;
+- Telegram Bot Token.
 
-3. **CSV Export Fails**
-   - Ensure `tmp` directory exists
-   - Check file permissions
-   - Verify data exists for selected period
+```bash
+git clone https://github.com/brysommer/OSBB.git
+cd OSBB
+npm install
+```
 
-### Logs
-- Application logs are printed to console
-- Database queries are logged (can be disabled in production)
-- Telegram API errors are handled gracefully
+## Змінні середовища
 
-## 🤝 Contributing
+Створіть `.env` у корені проєкту:
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+```env
+DATABASE_URL="postgresql://user:password@host:5432/database"
+ADMIN_BOT_BOT="telegram_bot_token"
+API_KEYS_ENCRYPTION_KEY="64_hex_characters"
+```
 
-## 📄 License
+`API_KEYS_ENCRYPTION_KEY` повинен містити 32 випадкові байти у hex-форматі. Згенерувати його можна командою:
 
-This project is licensed under the ISC License.
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
-## 📞 Support
+Не змінюйте цей ключ після збереження ключів ДАХ: без нього розшифрувати їх буде неможливо.
 
-For technical support or questions:
-- Create an issue on GitHub
-- Contact the development team
-- Check the documentation
+Старі змінні `DAH_API_KEY` і `DAH_API_KEY1` використовуються лише одноразовим скриптом перенесення наявних ключів у базу.
 
----
+## База даних
 
-**FUELBOT** - Streamlining fuel expense management through intelligent automation.
+Згенеруйте Prisma Client і застосуйте міграції:
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+Основні сутності:
+
+- `ResidentialComplex` — житловий комплекс і зашифрований ключ ДАХ;
+- `TelegramUser` та `UserAccess` — оператори й доступи до ЖК;
+- `Premises` — квартири та інші приміщення;
+- `Meter` — лічильники;
+- `Reading` — історія показників і статус їх експорту.
+
+Джерела показників:
+
+- `DAH` — імпортовано з ДАХ;
+- `YOURSELF` — подано мешканцем;
+- `COLLECTED` — підтверджено або введено оператором.
+
+## Перенесення старих ключів ДАХ
+
+Після додавання `API_KEYS_ENCRYPTION_KEY` виконайте:
+
+```bash
+npm run migrate-dah-api-keys
+```
+
+Скрипт зашифрує старі ключі та збереже їх у відповідних записах ЖК.
+
+## Запуск
+
+Режим розробки:
+
+```bash
+npx ts-node src/bot/bot.ts
+```
+
+Збірка і production-запуск:
+
+```bash
+npm run build
+node dist/bot/bot.js
+```
+
+## Допоміжні скрипти
+
+```bash
+npm run import-premises
+npm run import-readings
+npm run migrate-dah-api-keys
+```
+
+- `import-premises` — імпорт приміщень і лічильників;
+- `import-readings` — імпорт історичних показників;
+- `migrate-dah-api-keys` — перенесення старих ключів ДАХ у зашифровані поля ЖК.
+
+## Структура
+
+```text
+prisma/
+  migrations/                 міграції бази даних
+  schema.prisma               основна Prisma-схема
+src/
+  bot/                        Telegram-бот, сесії та повідомлення
+  repositories/               запити до показників
+  scripts/                    імпорт і службові сценарії
+  services/                   бізнес-логіка, ДАХ, черга та друк
+  lib/prisma.ts               Prisma Client
+```
+
+## Безпека
+
+- `.env` не повинен потрапляти в Git;
+- ключі ДАХ зберігаються в базі лише у зашифрованому вигляді AES-256-GCM;
+- головний ключ шифрування зберігається тільки в середовищі застосунку;
+- не передавайте токени через логи, Telegram-повідомлення або commit history;
+- регулярно створюйте резервні копії PostgreSQL.
+
+## Ліцензія
+
+ISC.
