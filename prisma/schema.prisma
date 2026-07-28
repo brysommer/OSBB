@@ -1,0 +1,107 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model TelegramUser {
+  id         String       @id @default(cuid())
+  telegramId BigInt       @unique
+  name       String?
+  accesses   UserAccess[]
+}
+
+model UserAccess {
+  id                   String             @id @default(cuid())
+  userId               String
+  residentialComplexId String
+  residentialComplex   ResidentialComplex @relation(fields: [residentialComplexId], references: [id])
+  user                 TelegramUser       @relation(fields: [userId], references: [id])
+
+  @@unique([userId, residentialComplexId])
+}
+
+model ResidentialComplex {
+  id                 String       @id @default(cuid())
+  name               String
+  shortName          String?
+  dahApiKeyEncrypted String?
+  createdAt          DateTime     @default(now())
+  premises           Premises[]
+  accesses           UserAccess[]
+}
+
+model Premises {
+  id                   String              @id @default(cuid())
+  dahId                String              @unique
+  name                 String
+  createdAt            DateTime            @default(now())
+  number               String?
+  apartmentNumber      String?
+  apartmentType        String?
+  buildingId           String?
+  buildingNumber       String?
+  floor                Int?
+  sectionNumber        String?
+  sectionType          String?
+  residentialComplexId String?
+  counters             Meter[]
+  residentialComplex   ResidentialComplex? @relation(fields: [residentialComplexId], references: [id])
+}
+
+model Meter {
+  id           String    @id @default(cuid())
+  dahId        String    @unique
+  premisesId   String
+  name         String
+  createdAt    DateTime  @default(now())
+  resourceType String
+  premises     Premises  @relation(fields: [premisesId], references: [id])
+  readings     Reading[]
+}
+
+model Reading {
+  id           String         @id @default(cuid())
+  meterId      String
+  period       String
+  previous     Float
+  current      Float
+  diff         Float
+  createdAt    DateTime       @default(now())
+  source       ReadingSource?
+  status       ReadingStatus?
+  exportError  String?
+  exportStatus ExportStatus?
+  exportedAt   DateTime?
+  meter        Meter          @relation(fields: [meterId], references: [id])
+
+  @@index([meterId, period, createdAt])
+}
+
+enum ResourceType {
+  HOT_WATER
+  HEATING
+  ELECTRICITY
+}
+
+enum ReadingStatus {
+  OK
+  WARNING
+  CORRECTED
+  CANCELLED
+}
+
+enum ReadingSource {
+  DAH
+  COLLECTED
+  YOURSELF
+}
+
+enum ExportStatus {
+  PENDING
+  SENT
+  ERROR
+}

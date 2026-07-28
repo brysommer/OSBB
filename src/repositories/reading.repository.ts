@@ -2,8 +2,12 @@ import { ExportStatus, PrismaClient, ReadingSource } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export async function getReadingsForExport(buildingNumber: string, period: string) {
-    return prisma.reading.findMany({
+export async function getReadingsForExport(
+    buildingNumber: string,
+    period: string,
+    residentialComplexId: string,
+) {
+    const readings = await prisma.reading.findMany({
         where: {
             period,
             source: ReadingSource.COLLECTED,
@@ -11,6 +15,7 @@ export async function getReadingsForExport(buildingNumber: string, period: strin
             meter: {
                 premises: {
                     buildingNumber,
+                    residentialComplexId,
                 },
             },
         },
@@ -23,22 +28,33 @@ export async function getReadingsForExport(buildingNumber: string, period: strin
             },
         },
 
-        orderBy: [
-            {
-                meter: {
-                    premises: {
-                        sectionNumber: 'asc',
-                    },
-                },
-            },
-            {
-                meter: {
-                    premises: {
-                        apartmentNumber: 'asc',
-                    },
-                },
-            },
-        ],
+        orderBy: {
+            createdAt: 'desc',
+        },
+    });
+
+    const latestByMeter = new Map<string, (typeof readings)[number]>();
+
+    for (const reading of readings) {
+        if (!latestByMeter.has(reading.meterId)) {
+            latestByMeter.set(reading.meterId, reading);
+        }
+    }
+
+    return [...latestByMeter.values()].sort((a, b) => {
+        const sectionCompare = (a.meter.premises.sectionNumber ?? '').localeCompare(
+            b.meter.premises.sectionNumber ?? '',
+            undefined,
+            { numeric: true },
+        );
+
+        if (sectionCompare !== 0) return sectionCompare;
+
+        return (a.meter.premises.apartmentNumber ?? '').localeCompare(
+            b.meter.premises.apartmentNumber ?? '',
+            undefined,
+            { numeric: true },
+        );
     });
 }
 

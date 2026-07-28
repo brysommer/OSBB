@@ -4,7 +4,6 @@ import 'dotenv/config';
 const api = axios.create({
     baseURL: 'https://open.api.dah-online.com/v1',
     headers: {
-        Authorization: `Bearer ${process.env.DAH_API_KEY}`,
         'Content-Type': 'application/json',
     },
     timeout: 30000,
@@ -15,11 +14,23 @@ export interface PutReadingResult {
     message?: string;
 }
 
-export async function putReading(counterId: string, value: number): Promise<PutReadingResult> {
+export async function putReading(
+    counterId: string,
+    value: number,
+    apiKey: string,
+): Promise<PutReadingResult> {
     try {
-        await api.put(`/counter/id/${counterId}`, {
-            valueZone1: value,
-        });
+        await api.put(
+            `/counter/id/${counterId}`,
+            {
+                valueZone1: value,
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                },
+            },
+        );
 
         return {
             success: true,

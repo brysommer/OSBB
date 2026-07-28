@@ -1,8 +1,23 @@
 import TelegramBot from 'node-telegram-bot-api';
 import { getSession } from './session';
 import { BotState } from './states';
-import { saveReading, validateReading } from '../services/reading.service';
+import { getCurrentPeriod, saveReading, validateReading } from '../services/reading.service';
 import { ReadingSource } from '@prisma/client';
+
+function meterHeader(item: {
+    buildingNumber: string;
+    sectionNumber: string;
+    floor: number | null;
+    apartmentNumber: string;
+    resourceType: string;
+}) {
+    return `🏠 Будинок: ${item.buildingNumber}
+🚪 Під'їзд: ${item.sectionNumber}
+🔢 Поверх: ${item.floor ?? 'не вказано'}
+🏢 Квартира: ${item.apartmentNumber}
+
+🔥 ${item.resourceType}`;
+}
 
 export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
     const session = getSession(chatId);
@@ -15,21 +30,82 @@ export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
         return;
     }
 
+    if (item.selfSubmitted != null) {
+        session.state = BotState.REVIEW_SELF_READING;
+
+        await bot.sendMessage(
+            chatId,
+            `${meterHeader(item)}
+
+📊 Попередній показник: ${item.previous}
+👤 Користувач подав самостійно: ${item.selfSubmitted}
+
+Прийняти чи скоригувати?`,
+            {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: '✅ Прийняти', callback_data: 'self_accept' }],
+                        [{ text: '✏️ Коригувати', callback_data: 'self_correct' }],
+                    ],
+                },
+            },
+        );
+
+        return;
+    }
+
     session.state = BotState.INPUT_READING;
 
     await bot.sendMessage(
         chatId,
-        `🏠 Будинок: ${item.buildingNumber}
-🚪 Під'їзд: ${item.sectionNumber}
-🏢 Квартира: ${item.apartmentNumber}
-
-🔥 ${item.resourceType}
+        `${meterHeader(item)}
 
 📊 Попередній показник: ${item.previous}
 
 ✏️ Введіть новий показник:`,
     );
 }
+
+export async function handleSelfAccept(bot: TelegramBot, chatId: number) {
+    const session = getSession(chatId);
+    const item = session.queue[session.currentIndex];
+
+    if (!item || item.selfSubmitted == null) return;
+
+    await saveReading({
+        meterId: item.meterId,
+        period: getCurrentPeriod(),
+        previous: item.previous,
+        current: item.selfSubmitted,
+        source: ReadingSource.COLLECTED,
+    });
+
+    item.selfSubmitted = undefined;
+
+    await moveNext(bot, chatId);
+}
+
+export async function handleSelfCorrect(bot: TelegramBot, chatId: number) {
+    const session = getSession(chatId);
+    const item = session.queue[session.currentIndex];
+
+    if (!item) return;
+
+    const selfSubmitted = item.selfSubmitted;
+    item.selfSubmitted = undefined;
+    session.state = BotState.INPUT_READING;
+
+    await bot.sendMessage(
+        chatId,
+        `${meterHeader(item)}
+
+📊 Попередній показник: ${item.previous}
+👤 Було подано самостійно: ${selfSubmitted}
+
+✏️ Введіть уточнений показник:`,
+    );
+}
+
 export async function handleReadingInput(bot: TelegramBot, chatId: number, text: string) {
     const session = getSession(chatId);
 
@@ -92,6 +168,8 @@ export async function handleReadingInput(bot: TelegramBot, chatId: number, text:
         source: ReadingSource.COLLECTED,
     });
 
+    item.selfSubmitted = undefined;
+
     await moveNext(bot, chatId);
 }
 
@@ -112,6 +190,7 @@ export async function handleConfirm(bot: TelegramBot, chatId: number, confirm: b
         });
 
         session.pendingValue = undefined;
+        item.selfSubmitted = undefined;
 
         await moveNext(bot, chatId);
     } else {
@@ -152,12 +231,4 @@ export async function moveNext(bot: TelegramBot, chatId: number) {
     }
 
     await sendCurrentMeter(bot, chatId);
-}
-function getCurrentPeriod(): string {
-    const now = new Date();
-
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 2).padStart(2, '0');
-
-    return `${year}-${month}-01`;
 }

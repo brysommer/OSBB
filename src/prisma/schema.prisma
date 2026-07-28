@@ -30,6 +30,7 @@ enum ReadingStatus {
 enum ReadingSource {
   DAH
   COLLECTED
+  YOURSELF
 }
 
 enum ExportStatus {
@@ -38,10 +39,51 @@ enum ExportStatus {
     ERROR
 }
 
+model TelegramUser {
 
+  id String @id @default(cuid())
+
+  telegramId BigInt @unique
+
+  name String?
+
+  accesses UserAccess[]
+}
+
+model UserAccess {
+
+  id String @id @default(cuid())
+
+  userId String
+  user TelegramUser @relation(fields:[userId], references:[id])
+      
+
+  residentialComplexId String
+  residentialComplex ResidentialComplex   @relation(fields:[residentialComplexId], references:[id])
+      
+
+  @@unique([userId,residentialComplexId])
+}
+
+model ResidentialComplex {
+  id        String @id @default(cuid())
+
+  name               String
+  shortName          String?
+  dahApiKeyEncrypted String?
+
+  premises  Premises[]
+  accesses  UserAccess[]
+
+  createdAt DateTime @default(now())
+}
 
 model Premises {
   id        String @id @default(cuid())
+
+  residentialComplexId String?
+  residentialComplex ResidentialComplex? @relation(fields: [residentialComplexId], references: [id])
+  
 
   dahId     String @unique
 
@@ -62,6 +104,8 @@ model Premises {
   counters  Meter[]
 
   createdAt DateTime @default(now())
+
+  
 }
 
 model Meter {
@@ -103,6 +147,6 @@ model Reading {
 
   createdAt DateTime @default(now())
 
-  @@unique([meterId, period], name: "meterId_period")
+  @@index([meterId, period, createdAt])
 }
 

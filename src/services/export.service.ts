@@ -11,8 +11,10 @@ import {
     markReadingSent,
 } from '@/repositories/reading.repository';*/
 import { getErrorText, putReading } from './dah.service';
+import { getResidentialComplexDahApiKey } from './residentialComplexApiKey.service';
 
 interface ExportOptions {
+    residentialComplexId: string;
     buildingNumber: string;
     period: string;
 
@@ -31,6 +33,7 @@ interface ExportOptions {
 }
 
 export async function exportReadings({
+    residentialComplexId,
     buildingNumber,
     period,
 
@@ -39,11 +42,13 @@ export async function exportReadings({
     onError,
     onFinish,
 }: ExportOptions) {
-    const readings = await getReadingsForExport(buildingNumber, period);
+    const readings = await getReadingsForExport(buildingNumber, period, residentialComplexId);
 
     if (!readings.length) {
         return;
     }
+
+    const apiKey = await getResidentialComplexDahApiKey(residentialComplexId);
 
     let success = 0;
     let failed = 0;
@@ -53,7 +58,7 @@ export async function exportReadings({
     for (let i = 0; i < readings.length; i++) {
         const reading = readings[i];
 
-        const result = await putReading(reading.meter.dahId, reading.current);
+        const result = await putReading(reading.meter.dahId, reading.current, apiKey);
 
         if (result.success) {
             success++;

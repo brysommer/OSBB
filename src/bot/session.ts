@@ -10,6 +10,8 @@ export interface QueueItem {
 
     sectionNumber: string;
 
+    floor: number | null;
+
     apartmentNumber: string;
 
     meterName: string;
@@ -17,12 +19,16 @@ export interface QueueItem {
     resourceType: ResourceType;
 
     previous: number;
+
+    selfSubmitted?: number;
 }
 
 export interface UserSession {
     state: BotState;
 
-    resourceType?: ResourceType | 'BOTH';
+    residentialComplexId?: string;
+
+    resourceTypes?: ResourceType[];
 
     buildingNumber?: string;
 
@@ -51,19 +57,4 @@ export function getSession(chatId: number): UserSession {
 
 export function clearSession(chatId: number) {
     sessions.delete(chatId);
-}
-
-export interface UserSession {
-    state: BotState;
-
-    resourceType?: ResourceType | 'BOTH';
-
-    buildingNumber?: string;
-    sectionNumber?: string;
-
-    queue: QueueItem[];
-
-    currentIndex: number;
-
-    pendingValue?: number;
 }

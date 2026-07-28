@@ -42,14 +42,8 @@ export function validateReading(previous: number, current: number) {
 export async function saveReading(input: SaveReadingInput) {
     const validation = validateReading(input.previous, input.current);
 
-    const reading = await prisma.reading.upsert({
-        where: {
-            meterId_period: {
-                meterId: input.meterId,
-                period: input.period,
-            },
-        },
-        create: {
+    const reading = await prisma.reading.create({
+        data: {
             meterId: input.meterId,
             period: input.period,
 
@@ -60,17 +54,19 @@ export async function saveReading(input: SaveReadingInput) {
             status: validation.status,
             source: input.source,
         },
-        update: {
-            previous: input.previous,
-            current: input.current,
-            diff: validation.diff,
-
-            status: validation.status,
-        },
     });
 
     return {
         reading,
         validation,
     };
+}
+
+export function getCurrentPeriod(): string {
+    const now = new Date();
+
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 2).padStart(2, '0');
+
+    return `${year}-${month}-01`;
 }

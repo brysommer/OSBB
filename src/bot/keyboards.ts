@@ -1,4 +1,5 @@
 import { InlineKeyboardMarkup } from 'node-telegram-bot-api';
+import { ResourceType } from '@prisma/client';
 
 export function mainKeyboard(): InlineKeyboardMarkup {
     return {
@@ -12,29 +13,45 @@ export function mainKeyboard(): InlineKeyboardMarkup {
         ],
     };
 }
-import { ResourceType } from '@prisma/client';
 
-export function resourceKeyboard(): InlineKeyboardMarkup {
+export function resourceKeyboard(availableResourceTypes: ResourceType[]): InlineKeyboardMarkup {
+    const rows: InlineKeyboardMarkup['inline_keyboard'] = [];
+    const hasHotWater = availableResourceTypes.includes(ResourceType.HOT_WATER);
+    const hasHeating = availableResourceTypes.includes(ResourceType.HEATING);
+    const hasElectricity = availableResourceTypes.includes(ResourceType.ELECTRICITY);
+
+    if (hasHotWater) {
+        rows.push([
+            {
+                text: '🚿 Лише ГВ',
+                callback_data: 'resource_scope:HOT_WATER',
+            },
+        ]);
+    }
+
+    if (hasHotWater && hasHeating) {
+        rows.push([
+            {
+                text: '🚿🔥 ГВ + підігрів',
+                callback_data: 'resource_scope:HOT_WATER_HEATING',
+            },
+        ]);
+    }
+
+    const allAlreadyCovered =
+        (availableResourceTypes.length === 1 && hasHotWater) ||
+        (availableResourceTypes.length === 2 && hasHotWater && hasHeating);
+
+    if (!allAlreadyCovered || hasElectricity) {
+        rows.push([
+            {
+                text: '🔄 Усі наявні ресурси',
+                callback_data: 'resource_scope:ALL',
+            },
+        ]);
+    }
+
     return {
-        inline_keyboard: [
-            [
-                {
-                    text: '🚿 Гаряча вода',
-                    callback_data: ResourceType.HOT_WATER,
-                },
-            ],
-            [
-                {
-                    text: '🔥 Теплопостачання',
-                    callback_data: ResourceType.HEATING,
-                },
-            ],
-            [
-                {
-                    text: '🚿🔥 ГВ + Тепло',
-                    callback_data: 'BOTH',
-                },
-            ],
-        ],
+        inline_keyboard: rows,
     };
 }

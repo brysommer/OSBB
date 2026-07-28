@@ -4,7 +4,7 @@ import 'dotenv/config';
 
 const prisma = new PrismaClient();
 
-export const DAH_API_KEY = process.env.DAH_API_KEY!;
+export const DAH_API_KEY = process.env.DAH_API_KEY1!;
 
 const DAH_URL = 'https://open.api.dah-online.com/v1/dictionary/apartments';
 
@@ -42,6 +42,8 @@ async function importApartments() {
                 buildingNumber: apartment.apartmentData?.buildingNumber ?? null,
 
                 floor: apartment.apartmentData?.floor ?? null,
+
+                residentialComplexId: 'cmrosnrz30000es5gu3cnk75c',
             },
             update: {
                 name: apartment.name,
@@ -57,6 +59,8 @@ async function importApartments() {
                 buildingNumber: apartment.apartmentData?.buildingNumber ?? null,
 
                 floor: apartment.apartmentData?.floor ?? null,
+
+                residentialComplexId: 'cmrosnrz30000es5gu3cnk75c',
             },
         });
 
