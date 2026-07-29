@@ -2,7 +2,30 @@ import TelegramBot from 'node-telegram-bot-api';
 import { getSession } from './session';
 import { BotState } from './states';
 import { getCurrentPeriod, saveReading, validateReading } from '../services/reading.service';
-import { ReadingSource } from '@prisma/client';
+import { ReadingSource, ResourceType } from '@prisma/client';
+
+function formatResource(resourceType: string): string {
+    switch (resourceType) {
+        case ResourceType.COLD_WATER:
+            return '💧 Холодна вода';
+        case ResourceType.HOT_WATER:
+            return '🚿 Гаряча вода';
+        case ResourceType.ELECTRICITY:
+            return '⚡ Електрика';
+        case ResourceType.HEATING:
+            return '🔥 Підігрів';
+        default:
+            return `📟 ${resourceType}`;
+    }
+}
+
+function bold(value: string | number | null | undefined): string {
+    if (value == null || value === '') {
+        return '*не вказано*';
+    }
+
+    return `*${String(value).replace(/\*/g, '')}*`;
+}
 
 function meterHeader(item: {
     buildingNumber: string;
@@ -13,11 +36,15 @@ function meterHeader(item: {
 }) {
     return `🏠 Будинок: ${item.buildingNumber}
 🚪 Під'їзд: ${item.sectionNumber}
-🔢 Поверх: ${item.floor ?? 'не вказано'}
-🏢 Квартира: ${item.apartmentNumber}
+🔢 Поверх: ${bold(item.floor)}
+🏢 Квартира: ${bold(item.apartmentNumber)}
 
-🔥 ${item.resourceType}`;
+${formatResource(item.resourceType)}`;
 }
+
+const markdownOptions = {
+    parse_mode: 'Markdown' as const,
+};
 
 export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
     const session = getSession(chatId);
@@ -37,11 +64,12 @@ export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
             chatId,
             `${meterHeader(item)}
 
-📊 Попередній показник: ${item.previous}
-👤 Користувач подав самостійно: ${item.selfSubmitted}
+📊 Попередній показник: ${bold(item.previous)}
+👤 Користувач подав самостійно: ${bold(item.selfSubmitted)}
 
 Прийняти чи скоригувати?`,
             {
+                ...markdownOptions,
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: '✅ Прийняти', callback_data: 'self_accept' }],
@@ -60,9 +88,10 @@ export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
         chatId,
         `${meterHeader(item)}
 
-📊 Попередній показник: ${item.previous}
+📊 Попередній показник: ${bold(item.previous)}
 
 ✏️ Введіть новий показник:`,
+        markdownOptions,
     );
 }
 
@@ -99,10 +128,11 @@ export async function handleSelfCorrect(bot: TelegramBot, chatId: number) {
         chatId,
         `${meterHeader(item)}
 
-📊 Попередній показник: ${item.previous}
-👤 Було подано самостійно: ${selfSubmitted}
+📊 Попередній показник: ${bold(item.previous)}
+👤 Було подано самостійно: ${bold(selfSubmitted)}
 
 ✏️ Введіть уточнений показник:`,
+        markdownOptions,
     );
 }
 
@@ -122,7 +152,6 @@ export async function handleReadingInput(bot: TelegramBot, chatId: number, text:
 
     session.pendingValue = current;
 
-    // 🔥 WARNING
     if (validation.status === 'WARNING') {
         session.state = BotState.CONFIRM_READING;
 
@@ -130,13 +159,14 @@ export async function handleReadingInput(bot: TelegramBot, chatId: number, text:
             chatId,
             `⚠️ Підозрілий показник
 
-🏠 ${item.apartmentNumber}
-Було: ${item.previous}
-Ви ввели: ${current}
-Різниця: ${validation.diff}
+🏠 Квартира: ${bold(item.apartmentNumber)}
+Було: ${bold(item.previous)}
+Ви ввели: ${bold(current)}
+Різниця: ${bold(validation.diff)}
 
 Все правильно?`,
             {
+                ...markdownOptions,
                 reply_markup: {
                     inline_keyboard: [
                         [
@@ -159,7 +189,6 @@ export async function handleReadingInput(bot: TelegramBot, chatId: number, text:
         return;
     }
 
-    // ✅ OK одразу зберігаємо
     await saveReading({
         meterId: item.meterId,
         period: getCurrentPeriod(),

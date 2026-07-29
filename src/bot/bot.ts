@@ -3,7 +3,7 @@ import TelegramBot from 'node-telegram-bot-api';
 import { sessions, getSession, clearSession } from './session';
 import { BotState } from './states';
 
-import { mainKeyboard, resourceKeyboard } from './keyboards';
+import { mainKeyboard, resourceKeyboard, resolveCollectionMode } from './keyboards';
 
 import {
     sendCurrentMeter,
@@ -13,14 +13,9 @@ import {
     handleSelfCorrect,
 } from './messages';
 
-import {
-    getBuildings,
-    getBuildingResourceTypes,
-    getSections,
-    buildQueue,
-} from '../services/queue.service';
+import { getBuildings, getSections, buildQueue } from '../services/queue.service';
+import { getSectionAllowedResourceTypes } from '../services/buildingSection.service';
 
-import { ResourceType } from '@prisma/client';
 import dotenv from 'dotenv';
 import { registerPutReadingsHandler } from './handlers/putReadings.handler';
 import { getAvailableResidentialComplexes } from '../services/userAccess.service';
@@ -80,7 +75,6 @@ bot.on('callback_query', async (query) => {
     const data = query.data!;
     const session = getSession(chatId);
 
-    // 🔥 START FLOW
     if (data === 'start_collection') {
         session.state = BotState.SELECT_COMPLEX;
 
@@ -102,7 +96,6 @@ bot.on('callback_query', async (query) => {
 
     if (data.startsWith('complex:')) {
         session.residentialComplexId = data.split(':')[1];
-
         session.state = BotState.SELECT_BUILDING;
 
         const buildings = await getBuildings(session.residentialComplexId!);
@@ -120,65 +113,16 @@ bot.on('callback_query', async (query) => {
 
         return;
     }
+
     if (data.startsWith('building:')) {
         const building = data.split(':')[1];
 
         session.buildingNumber = building;
-        session.state = BotState.SELECT_RESOURCE;
-
-        const resourceTypes = await getBuildingResourceTypes(
-            session.residentialComplexId!,
-            building,
-        );
-
-        if (!resourceTypes.length) {
-            await bot.sendMessage(chatId, '❌ У цьому будинку немає лічильників');
-            return;
-        }
-
-        await bot.sendMessage(chatId, '🚰 Оберіть режим обходу:', {
-            reply_markup: resourceKeyboard(resourceTypes),
-        });
-
-        return;
-    }
-    if (data.startsWith('resource_scope:')) {
-        if (!session.residentialComplexId || !session.buildingNumber) return;
-
-        const scope = data.replace('resource_scope:', '');
-        const availableResourceTypes = await getBuildingResourceTypes(
-            session.residentialComplexId,
-            session.buildingNumber,
-        );
-
-        if (scope === 'COLD_WATER') {
-            session.resourceTypes = availableResourceTypes.filter(
-                (resourceType) => resourceType === ResourceType.COLD_WATER,
-            );
-        } else if (scope === 'HOT_WATER') {
-            session.resourceTypes = availableResourceTypes.filter(
-                (resourceType) => resourceType === ResourceType.HOT_WATER,
-            );
-        } else if (scope === 'HOT_WATER_HEATING') {
-            session.resourceTypes = availableResourceTypes.filter(
-                (resourceType) =>
-                    resourceType === ResourceType.HOT_WATER ||
-                    resourceType === ResourceType.HEATING,
-            );
-        } else if (scope === 'ALL') {
-            session.resourceTypes = availableResourceTypes;
-        } else {
-            return;
-        }
-
-        if (!session.resourceTypes.length) return;
-
+        session.resourceTypes = undefined;
+        session.sectionNumber = undefined;
         session.state = BotState.SELECT_SECTION;
 
-        const sections = await getSections(
-            session.residentialComplexId,
-            session.buildingNumber,
-        );
+        const sections = await getSections(session.residentialComplexId!, building);
 
         await bot.sendMessage(chatId, '🚪 Оберіть під’їзд:', {
             reply_markup: {
@@ -193,27 +137,115 @@ bot.on('callback_query', async (query) => {
 
         return;
     }
-    if (data.startsWith('section:')) {
+
+    if (data.startsWith('section:') || data === 'select_section') {
+        if (data === 'select_section') {
+            if (!session.residentialComplexId || !session.buildingNumber) return;
+
+            session.state = BotState.SELECT_SECTION;
+            session.resourceTypes = undefined;
+            session.sectionNumber = undefined;
+
+            const sections = await getSections(
+                session.residentialComplexId,
+                session.buildingNumber,
+            );
+
+            await bot.sendMessage(chatId, '🚪 Оберіть під’їзд:', {
+                reply_markup: {
+                    inline_keyboard: sections.map((s) => [
+                        {
+                            text: s,
+                            callback_data: `section:${s}`,
+                        },
+                    ]),
+                },
+            });
+
+            return;
+        }
+
         const section = data.split(':')[1];
-
         session.sectionNumber = section;
+        session.state = BotState.SELECT_RESOURCE;
 
-        if (!session.resourceTypes?.length || !session.buildingNumber) return;
+        if (!session.residentialComplexId || !session.buildingNumber) return;
 
-        session.queue = await buildQueue(
-            session.residentialComplexId!,
+        const resourceTypes = await getSectionAllowedResourceTypes(
+            session.residentialComplexId,
             session.buildingNumber,
             section,
+        );
+
+        if (!resourceTypes.length) {
+            await bot.sendMessage(
+                chatId,
+                '❌ У цьому під’їзді немає доступних ресурсів за поточними налаштуваннями',
+            );
+            return;
+        }
+
+        const keyboard = resourceKeyboard(resourceTypes);
+
+        if (!keyboard.inline_keyboard.length) {
+            await bot.sendMessage(
+                chatId,
+                '❌ Немає доступних режимів обходу для цього під’їзду. Перевір прапорці в BuildingSection.',
+            );
+            return;
+        }
+
+        await bot.sendMessage(chatId, '🚰 Оберіть режим обходу:', {
+            reply_markup: keyboard,
+        });
+
+        return;
+    }
+
+    if (data.startsWith('resource_scope:')) {
+        if (!session.residentialComplexId || !session.buildingNumber || !session.sectionNumber) {
+            return;
+        }
+
+        const modeId = data.replace('resource_scope:', '');
+        const mode = resolveCollectionMode(modeId);
+
+        if (!mode) return;
+
+        const availableResourceTypes = await getSectionAllowedResourceTypes(
+            session.residentialComplexId,
+            session.buildingNumber,
+            session.sectionNumber,
+        );
+        const available = new Set(availableResourceTypes);
+
+        if (!mode.resources.every((resourceType) => available.has(resourceType))) {
+            await bot.sendMessage(chatId, '❌ Цей режим недоступний для вибраного під’їзду');
+            return;
+        }
+
+        session.resourceTypes = mode.resources;
+
+        session.queue = await buildQueue(
+            session.residentialComplexId,
+            session.buildingNumber,
+            session.sectionNumber,
             session.resourceTypes,
         );
 
         session.currentIndex = 0;
         session.state = BotState.INPUT_READING;
 
-        await sendCurrentMeter(bot, chatId);
+        if (!session.queue.length) {
+            await bot.sendMessage(chatId, '✅ Немає лічильників для обходу в цьому режимі');
+            session.state = BotState.IDLE;
+            return;
+        }
 
+        await sendCurrentMeter(bot, chatId);
         return;
     }
+
     if (data === 'self_accept') {
         await handleSelfAccept(bot, chatId);
         return;
@@ -234,6 +266,7 @@ bot.on('callback_query', async (query) => {
         return;
     }
 });
+
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
 
@@ -245,6 +278,7 @@ bot.on('message', async (msg) => {
         await handleReadingInput(bot, chatId, msg.text);
     }
 });
+
 bot.on('callback_query', async (query) => {
     const chatId = query.message!.chat.id;
     const data = query.data!;

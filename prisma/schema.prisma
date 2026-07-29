@@ -25,13 +25,44 @@ model UserAccess {
 }
 
 model ResidentialComplex {
-  id                 String       @id @default(cuid())
+  id                 String            @id @default(cuid())
   name               String
   shortName          String?
   dahApiKeyEncrypted String?
-  createdAt          DateTime     @default(now())
+  createdAt          DateTime          @default(now())
   premises           Premises[]
   accesses           UserAccess[]
+  buildingSections   BuildingSection[]
+}
+
+/// Під'їзд будинку. Редагуй прапорці в Prisma Studio (Bob).
+model BuildingSection {
+  id                   String @id @default(cuid())
+  residentialComplexId String
+
+  /// Для зручного перегляду в Bob, наприклад: Синергія Лайт · буд. 289А · під'їзд 1
+  address String
+
+  complexName    String
+  buildingNumber String
+  sectionNumber  String
+
+  /// Котельня. false = немає ГВ і опалення в цьому під'їзді
+  hasBoilerRoom Boolean @default(true)
+
+  /// true = індивідуальні договори ЕЕ → ЕЕ не знімаємо обходом
+  individualElectricityContracts Boolean @default(false)
+
+  /// true = індивідуальні договори ХВ → ХВ не знімаємо обходом
+  individualColdWaterContracts Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  residentialComplex ResidentialComplex @relation(fields: [residentialComplexId], references: [id])
+
+  @@unique([residentialComplexId, buildingNumber, sectionNumber])
+  @@index([residentialComplexId, buildingNumber])
 }
 
 model Premises {
