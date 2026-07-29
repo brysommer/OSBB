@@ -16,9 +16,19 @@ export function mainKeyboard(): InlineKeyboardMarkup {
 
 export function resourceKeyboard(availableResourceTypes: ResourceType[]): InlineKeyboardMarkup {
     const rows: InlineKeyboardMarkup['inline_keyboard'] = [];
+    const hasColdWater = availableResourceTypes.includes(ResourceType.COLD_WATER);
     const hasHotWater = availableResourceTypes.includes(ResourceType.HOT_WATER);
     const hasHeating = availableResourceTypes.includes(ResourceType.HEATING);
     const hasElectricity = availableResourceTypes.includes(ResourceType.ELECTRICITY);
+
+    if (hasColdWater) {
+        rows.push([
+            {
+                text: '💧 Лише ХВ',
+                callback_data: 'resource_scope:COLD_WATER',
+            },
+        ]);
+    }
 
     if (hasHotWater) {
         rows.push([
@@ -39,10 +49,10 @@ export function resourceKeyboard(availableResourceTypes: ResourceType[]): Inline
     }
 
     const allAlreadyCovered =
-        (availableResourceTypes.length === 1 && hasHotWater) ||
+        (availableResourceTypes.length === 1 && (hasColdWater || hasHotWater)) ||
         (availableResourceTypes.length === 2 && hasHotWater && hasHeating);
 
-    if (!allAlreadyCovered || hasElectricity) {
+    if (!allAlreadyCovered || hasElectricity || (hasColdWater && availableResourceTypes.length > 1)) {
         rows.push([
             {
                 text: '🔄 Усі наявні ресурси',

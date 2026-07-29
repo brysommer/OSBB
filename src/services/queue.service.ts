@@ -160,9 +160,10 @@ export async function buildQueue(
     });
 
     const resourceOrder: Record<ResourceType, number> = {
-        [ResourceType.HOT_WATER]: 0,
-        [ResourceType.HEATING]: 1,
+        [ResourceType.COLD_WATER]: 0,
+        [ResourceType.HOT_WATER]: 1,
         [ResourceType.ELECTRICITY]: 2,
+        [ResourceType.HEATING]: 3,
     };
 
     queue.sort((a, b) => {

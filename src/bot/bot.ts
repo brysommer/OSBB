@@ -151,7 +151,11 @@ bot.on('callback_query', async (query) => {
             session.buildingNumber,
         );
 
-        if (scope === 'HOT_WATER') {
+        if (scope === 'COLD_WATER') {
+            session.resourceTypes = availableResourceTypes.filter(
+                (resourceType) => resourceType === ResourceType.COLD_WATER,
+            );
+        } else if (scope === 'HOT_WATER') {
             session.resourceTypes = availableResourceTypes.filter(
                 (resourceType) => resourceType === ResourceType.HOT_WATER,
             );

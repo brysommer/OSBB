@@ -82,6 +82,7 @@ model Reading {
 }
 
 enum ResourceType {
+  COLD_WATER
   HOT_WATER
   HEATING
   ELECTRICITY
