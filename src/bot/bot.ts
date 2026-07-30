@@ -60,12 +60,16 @@ bot.onText(/\/cancel/, async (msg) => {
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
 
-    await registerTelegramUser(chatId);
+    const user = await registerTelegramUser(chatId);
 
     const session = getSession(chatId);
     session.state = BotState.IDLE;
 
-    await bot.sendMessage(chatId, '👋 Система обходу лічильників', {
+    const greeting = user.name
+        ? `👋 Вітаю, ${user.name}!`
+        : '👋 Система обходу лічильників';
+
+    await bot.sendMessage(chatId, greeting, {
         reply_markup: mainKeyboard(),
     });
 });
@@ -74,6 +78,12 @@ bot.on('callback_query', async (query) => {
     const chatId = query.message!.chat.id;
     const data = query.data!;
     const session = getSession(chatId);
+
+    try {
+        await bot.answerCallbackQuery(query.id);
+    } catch {
+        // ignore expired callback answers
+    }
 
     if (data === 'start_collection') {
         session.state = BotState.SELECT_COMPLEX;

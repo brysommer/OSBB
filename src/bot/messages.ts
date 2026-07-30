@@ -19,12 +19,19 @@ function formatResource(resourceType: string): string {
     }
 }
 
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function bold(value: string | number | null | undefined): string {
     if (value == null || value === '') {
-        return '*не вказано*';
+        return '<b>не вказано</b>';
     }
 
-    return `*${String(value).replace(/\*/g, '')}*`;
+    return `<b>${escapeHtml(String(value))}</b>`;
 }
 
 function meterHeader(item: {
@@ -34,17 +41,34 @@ function meterHeader(item: {
     apartmentNumber: string;
     resourceType: string;
 }) {
-    return `🏠 Будинок: ${item.buildingNumber}
-🚪 Під'їзд: ${item.sectionNumber}
+    return `🏠 Будинок: ${escapeHtml(item.buildingNumber)}
+🚪 Під'їзд: ${escapeHtml(item.sectionNumber)}
 🔢 Поверх: ${bold(item.floor)}
 🏢 Квартира: ${bold(item.apartmentNumber)}
 
 ${formatResource(item.resourceType)}`;
 }
 
-const markdownOptions = {
-    parse_mode: 'Markdown' as const,
+const htmlOptions = {
+    parse_mode: 'HTML' as const,
 };
+
+async function sendHtmlMessage(
+    bot: TelegramBot,
+    chatId: number,
+    text: string,
+    extra: TelegramBot.SendMessageOptions = {},
+) {
+    try {
+        await bot.sendMessage(chatId, text, {
+            ...htmlOptions,
+            ...extra,
+        });
+    } catch {
+        const plainText = text.replace(/<\/?b>/g, '');
+        await bot.sendMessage(chatId, plainText, extra);
+    }
+}
 
 export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
     const session = getSession(chatId);
@@ -60,7 +84,8 @@ export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
     if (item.selfSubmitted != null) {
         session.state = BotState.REVIEW_SELF_READING;
 
-        await bot.sendMessage(
+        await sendHtmlMessage(
+            bot,
             chatId,
             `${meterHeader(item)}
 
@@ -69,7 +94,6 @@ export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
 
 Прийняти чи скоригувати?`,
             {
-                ...markdownOptions,
                 reply_markup: {
                     inline_keyboard: [
                         [{ text: '✅ Прийняти', callback_data: 'self_accept' }],
@@ -84,14 +108,14 @@ export async function sendCurrentMeter(bot: TelegramBot, chatId: number) {
 
     session.state = BotState.INPUT_READING;
 
-    await bot.sendMessage(
+    await sendHtmlMessage(
+        bot,
         chatId,
         `${meterHeader(item)}
 
 📊 Попередній показник: ${bold(item.previous)}
 
 ✏️ Введіть новий показник:`,
-        markdownOptions,
     );
 }
 
@@ -124,7 +148,8 @@ export async function handleSelfCorrect(bot: TelegramBot, chatId: number) {
     item.selfSubmitted = undefined;
     session.state = BotState.INPUT_READING;
 
-    await bot.sendMessage(
+    await sendHtmlMessage(
+        bot,
         chatId,
         `${meterHeader(item)}
 
@@ -132,7 +157,6 @@ export async function handleSelfCorrect(bot: TelegramBot, chatId: number) {
 👤 Було подано самостійно: ${bold(selfSubmitted)}
 
 ✏️ Введіть уточнений показник:`,
-        markdownOptions,
     );
 }
 
@@ -155,7 +179,8 @@ export async function handleReadingInput(bot: TelegramBot, chatId: number, text:
     if (validation.status === 'WARNING') {
         session.state = BotState.CONFIRM_READING;
 
-        await bot.sendMessage(
+        await sendHtmlMessage(
+            bot,
             chatId,
             `⚠️ Підозрілий показник
 
@@ -166,7 +191,6 @@ export async function handleReadingInput(bot: TelegramBot, chatId: number, text:
 
 Все правильно?`,
             {
-                ...markdownOptions,
                 reply_markup: {
                     inline_keyboard: [
                         [
@@ -204,12 +228,13 @@ export async function handleReadingInput(bot: TelegramBot, chatId: number, text:
 
 export async function handleConfirm(bot: TelegramBot, chatId: number, confirm: boolean) {
     const session = getSession(chatId);
-
     const item = session.queue[session.currentIndex];
 
-    if (!session.pendingValue) return;
+    if (!item) return;
 
     if (confirm) {
+        if (session.pendingValue == null) return;
+
         await saveReading({
             meterId: item.meterId,
             period: getCurrentPeriod(),
@@ -222,11 +247,21 @@ export async function handleConfirm(bot: TelegramBot, chatId: number, confirm: b
         item.selfSubmitted = undefined;
 
         await moveNext(bot, chatId);
-    } else {
-        session.pendingValue = undefined;
-
-        await sendCurrentMeter(bot, chatId);
+        return;
     }
+
+    session.pendingValue = undefined;
+    session.state = BotState.INPUT_READING;
+
+    await sendHtmlMessage(
+        bot,
+        chatId,
+        `${meterHeader(item)}
+
+📊 Попередній показник: ${bold(item.previous)}
+
+✏️ Введіть новий показник:`,
+    );
 }
 
 export async function moveNext(bot: TelegramBot, chatId: number) {
