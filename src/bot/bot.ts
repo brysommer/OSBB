@@ -19,14 +19,13 @@ import {
     handleSelfCorrect,
 } from './messages';
 import {
+    askSerialNumber,
     handleSerialApartmentInput,
-    handleSerialSkip,
-    sendCurrentSerialMappingMeter,
+    handleSerialNumberInput,
 } from './serialMapping.messages';
 
 import { getBuildings, getSections, buildQueue } from '../services/queue.service';
 import { getSectionAllowedResourceTypes } from '../services/buildingSection.service';
-import { buildSerialMappingQueue } from '../services/serialMapping.service';
 
 import dotenv from 'dotenv';
 import { registerPutReadingsHandler } from './handlers/putReadings.handler';
@@ -188,6 +187,8 @@ bot.on('callback_query', async (query) => {
 
             session.state = BotState.SELECT_SECTION;
             session.resourceTypes = undefined;
+            session.serialResourceType = undefined;
+            session.pendingSerialNumber = undefined;
             session.sectionNumber = undefined;
 
             const sections = await getSections(
@@ -322,21 +323,9 @@ bot.on('callback_query', async (query) => {
         }
 
         session.serialResourceType = resourceType as ResourceType;
-        session.serialQueue = await buildSerialMappingQueue(
-            session.residentialComplexId,
-            session.buildingNumber,
-            session.sectionNumber,
-            resourceType as ResourceType,
-        );
-        session.serialCurrentIndex = 0;
+        session.pendingSerialNumber = undefined;
 
-        if (!session.serialQueue.length) {
-            await bot.sendMessage(chatId, '✅ Немає лічильників для цього ресурсу');
-            session.state = BotState.IDLE;
-            return;
-        }
-
-        await sendCurrentSerialMappingMeter(bot, chatId);
+        await askSerialNumber(bot, chatId);
         return;
     }
 
@@ -359,11 +348,6 @@ bot.on('callback_query', async (query) => {
         await handleConfirm(bot, chatId, false);
         return;
     }
-
-    if (data === 'serial_skip') {
-        await handleSerialSkip(bot, chatId);
-        return;
-    }
 });
 
 bot.on('message', async (msg) => {
@@ -375,6 +359,11 @@ bot.on('message', async (msg) => {
 
     if (session.state === BotState.INPUT_READING) {
         await handleReadingInput(bot, chatId, msg.text);
+        return;
+    }
+
+    if (session.state === BotState.INPUT_SERIAL_NUMBER) {
+        await handleSerialNumberInput(bot, chatId, msg.text);
         return;
     }
 

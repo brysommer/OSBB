@@ -1,72 +1,92 @@
 import TelegramBot from 'node-telegram-bot-api';
+import { ResourceType } from '@prisma/client';
 import { getSession } from './session';
 import { BotState } from './states';
-import { assignSerialMeterToApartment } from '../services/serialMapping.service';
+import { assignSerialToApartmentMeter } from '../services/serialMapping.service';
 
-function escapeHtml(value: string): string {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
-
-async function sendHtmlMessage(
-    bot: TelegramBot,
-    chatId: number,
-    text: string,
-    extra: TelegramBot.SendMessageOptions = {},
-) {
-    try {
-        await bot.sendMessage(chatId, text, {
-            parse_mode: 'HTML',
-            ...extra,
-        });
-    } catch {
-        await bot.sendMessage(chatId, text.replace(/<\/?b>/g, ''), extra);
+function formatResource(resourceType: ResourceType): string {
+    switch (resourceType) {
+        case ResourceType.COLD_WATER:
+            return 'ХВ';
+        case ResourceType.HOT_WATER:
+            return 'ГВ';
+        case ResourceType.ELECTRICITY:
+            return 'ЕЕ';
+        case ResourceType.HEATING:
+            return 'ОП';
+        default:
+            return resourceType;
     }
 }
 
-export async function sendCurrentSerialMappingMeter(bot: TelegramBot, chatId: number) {
-    const session = getSession(chatId);
-    const item = session.serialQueue[session.serialCurrentIndex];
+function finishKeyboard() {
+    return {
+        inline_keyboard: [
+            [{ text: '🏢 Обрати інший підʼїзд', callback_data: 'select_section' }],
+            [{ text: '🏠 Завершити', callback_data: 'finish' }],
+        ],
+    };
+}
 
-    if (!item) {
-        session.state = BotState.IDLE;
-        await bot.sendMessage(chatId, '✅ Привʼязку серійних номерів завершено', {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '🏢 Обрати інший підʼїзд', callback_data: 'select_section' }],
-                    [{ text: '🏠 Завершити', callback_data: 'finish' }],
-                ],
-            },
-        });
+export async function askSerialNumber(bot: TelegramBot, chatId: number) {
+    const session = getSession(chatId);
+
+    if (
+        !session.buildingNumber ||
+        !session.sectionNumber ||
+        !session.serialResourceType
+    ) {
         return;
     }
 
+    session.state = BotState.INPUT_SERIAL_NUMBER;
+    session.pendingSerialNumber = undefined;
+
+    await bot.sendMessage(
+        chatId,
+        `🏠 Будинок: ${session.buildingNumber}
+🚪 Під'їзд: ${session.sectionNumber}
+🔢 Ресурс: ${formatResource(session.serialResourceType)}
+
+Серійний номер:`,
+        {
+            reply_markup: finishKeyboard(),
+        },
+    );
+}
+
+export async function handleSerialNumberInput(bot: TelegramBot, chatId: number, text: string) {
+    const session = getSession(chatId);
+    const serialNumber = text.trim();
+
+    if (!serialNumber) {
+        await bot.sendMessage(chatId, '❌ Введіть серійний номер');
+        return;
+    }
+
+    session.pendingSerialNumber = serialNumber;
     session.state = BotState.INPUT_SERIAL_APARTMENT;
 
-    await sendHtmlMessage(
-        bot,
+    await bot.sendMessage(
         chatId,
-        `🔢 Серійний номер: <b>${escapeHtml(item.serialNumber ?? item.meterName)}</b>
-🏠 Будинок: ${escapeHtml(item.buildingNumber)}
-🚪 Під'їзд: ${escapeHtml(item.sectionNumber)}
-📍 Поточна квартира: <b>${escapeHtml(item.currentApartmentNumber || 'не вказано')}</b>
+        `🔢 Серійний номер: ${serialNumber}
 
 Відповідає квартирі:`,
-        {
-            reply_markup: {
-                inline_keyboard: [[{ text: '⏭️ Пропустити', callback_data: 'serial_skip' }]],
-            },
-        },
     );
 }
 
 export async function handleSerialApartmentInput(bot: TelegramBot, chatId: number, text: string) {
     const session = getSession(chatId);
-    const item = session.serialQueue[session.serialCurrentIndex];
 
-    if (!item || !session.residentialComplexId || !session.buildingNumber || !session.sectionNumber) {
+    if (
+        !session.residentialComplexId ||
+        !session.buildingNumber ||
+        !session.sectionNumber ||
+        !session.serialResourceType ||
+        !session.pendingSerialNumber
+    ) {
+        await bot.sendMessage(chatId, '❌ Сесію втрачено. Почніть привʼязку знову.');
+        session.state = BotState.IDLE;
         return;
     }
 
@@ -76,41 +96,46 @@ export async function handleSerialApartmentInput(bot: TelegramBot, chatId: numbe
         return;
     }
 
-    const result = await assignSerialMeterToApartment(
-        item.meterId,
-        session.residentialComplexId,
-        session.buildingNumber,
-        session.sectionNumber,
+    const result = await assignSerialToApartmentMeter({
+        residentialComplexId: session.residentialComplexId,
+        buildingNumber: session.buildingNumber,
+        sectionNumber: session.sectionNumber,
+        resourceType: session.serialResourceType,
         apartmentNumber,
-    );
+        serialNumber: session.pendingSerialNumber,
+    });
 
     if (!result.ok) {
         if (result.reason === 'NO_PREMISES') {
-            await bot.sendMessage(chatId, '❌ У цьому підʼїзді немає такої квартири. Введіть ще раз.');
-            return;
-        }
-        if (result.reason === 'RESOURCE_ALREADY_EXISTS') {
             await bot.sendMessage(
                 chatId,
-                '❌ Для цієї квартири вже є лічильник цього ресурсу. Введіть іншу квартиру.',
+                '❌ У цьому підʼїзді немає такої квартири. Введіть ще раз.',
             );
             return;
         }
-        await bot.sendMessage(chatId, '❌ Не вдалося зберегти відповідність. Спробуйте ще раз.');
+        if (result.reason === 'NO_METER') {
+            await bot.sendMessage(
+                chatId,
+                '❌ У цій квартирі немає лічильника обраного ресурсу. Введіть іншу квартиру.',
+            );
+            return;
+        }
+        if (result.reason === 'SERIAL_TAKEN') {
+            await bot.sendMessage(
+                chatId,
+                '❌ Цей серійний номер уже привʼязаний до іншого лічильника. Введіть серійний ще раз.',
+            );
+            await askSerialNumber(bot, chatId);
+            return;
+        }
+        await bot.sendMessage(chatId, '❌ Не вдалося зберегти. Спробуйте ще раз.');
         return;
     }
 
     await bot.sendMessage(
         chatId,
-        `✅ Збережено: серійний ${item.serialNumber ?? item.meterName} → квартира ${apartmentNumber}`,
+        `✅ Збережено: ${session.pendingSerialNumber} → квартира ${apartmentNumber}`,
     );
 
-    session.serialCurrentIndex += 1;
-    await sendCurrentSerialMappingMeter(bot, chatId);
-}
-
-export async function handleSerialSkip(bot: TelegramBot, chatId: number) {
-    const session = getSession(chatId);
-    session.serialCurrentIndex += 1;
-    await sendCurrentSerialMappingMeter(bot, chatId);
+    await askSerialNumber(bot, chatId);
 }
