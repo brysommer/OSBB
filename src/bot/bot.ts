@@ -1,9 +1,15 @@
 import TelegramBot from 'node-telegram-bot-api';
+import { ResourceType } from '@prisma/client';
 
 import { sessions, getSession, clearSession } from './session';
 import { BotState } from './states';
 
-import { mainKeyboard, resourceKeyboard, resolveCollectionMode } from './keyboards';
+import {
+    mainKeyboard,
+    resourceKeyboard,
+    resolveCollectionMode,
+    singleResourceKeyboard,
+} from './keyboards';
 
 import {
     sendCurrentMeter,
@@ -12,9 +18,15 @@ import {
     handleSelfAccept,
     handleSelfCorrect,
 } from './messages';
+import {
+    handleSerialApartmentInput,
+    handleSerialSkip,
+    sendCurrentSerialMappingMeter,
+} from './serialMapping.messages';
 
 import { getBuildings, getSections, buildQueue } from '../services/queue.service';
 import { getSectionAllowedResourceTypes } from '../services/buildingSection.service';
+import { buildSerialMappingQueue } from '../services/serialMapping.service';
 
 import dotenv from 'dotenv';
 import { registerPutReadingsHandler } from './handlers/putReadings.handler';
@@ -86,11 +98,32 @@ bot.on('callback_query', async (query) => {
     }
 
     if (data === 'start_collection') {
+        session.mode = 'COLLECTION';
         session.state = BotState.SELECT_COMPLEX;
 
         const complexes = await getAvailableResidentialComplexes(chatId);
 
         await bot.sendMessage(chatId, '🏢 Оберіть житловий комплекс:', {
+            reply_markup: {
+                inline_keyboard: complexes.map((c) => [
+                    {
+                        text: c.name,
+                        callback_data: `complex:${c.id}`,
+                    },
+                ]),
+            },
+        });
+
+        return;
+    }
+
+    if (data === 'start_serial_mapping') {
+        session.mode = 'SERIAL_MAPPING';
+        session.state = BotState.SELECT_COMPLEX;
+
+        const complexes = await getAvailableResidentialComplexes(chatId);
+
+        await bot.sendMessage(chatId, '🏢 Оберіть житловий комплекс для привʼязки серійних:', {
             reply_markup: {
                 inline_keyboard: complexes.map((c) => [
                     {
@@ -129,6 +162,7 @@ bot.on('callback_query', async (query) => {
 
         session.buildingNumber = building;
         session.resourceTypes = undefined;
+        session.serialResourceType = undefined;
         session.sectionNumber = undefined;
         session.state = BotState.SELECT_SECTION;
 
@@ -195,6 +229,18 @@ bot.on('callback_query', async (query) => {
             return;
         }
 
+        if (session.mode === 'SERIAL_MAPPING') {
+            const singleResource = singleResourceKeyboard(resourceTypes, 'serial_resource');
+            if (!singleResource.inline_keyboard.length) {
+                await bot.sendMessage(chatId, '❌ Немає ресурсів у цьому підʼїзді');
+                return;
+            }
+            await bot.sendMessage(chatId, '🔢 Оберіть ресурс для привʼязки серійних:', {
+                reply_markup: singleResource,
+            });
+            return;
+        }
+
         const keyboard = resourceKeyboard(resourceTypes);
 
         if (!keyboard.inline_keyboard.length) {
@@ -213,6 +259,9 @@ bot.on('callback_query', async (query) => {
     }
 
     if (data.startsWith('resource_scope:')) {
+        if (session.mode !== 'COLLECTION') {
+            return;
+        }
         if (!session.residentialComplexId || !session.buildingNumber || !session.sectionNumber) {
             return;
         }
@@ -256,6 +305,41 @@ bot.on('callback_query', async (query) => {
         return;
     }
 
+    if (data.startsWith('serial_resource:')) {
+        if (session.mode !== 'SERIAL_MAPPING') return;
+        if (!session.residentialComplexId || !session.buildingNumber || !session.sectionNumber) return;
+
+        const resourceType = data.replace('serial_resource:', '');
+        const allowed = await getSectionAllowedResourceTypes(
+            session.residentialComplexId,
+            session.buildingNumber,
+            session.sectionNumber,
+        );
+        const valid = new Set<string>(Object.values(ResourceType));
+        if (!valid.has(resourceType) || !allowed.includes(resourceType as ResourceType)) {
+            await bot.sendMessage(chatId, '❌ Цей ресурс недоступний для підʼїзду');
+            return;
+        }
+
+        session.serialResourceType = resourceType as ResourceType;
+        session.serialQueue = await buildSerialMappingQueue(
+            session.residentialComplexId,
+            session.buildingNumber,
+            session.sectionNumber,
+            resourceType as ResourceType,
+        );
+        session.serialCurrentIndex = 0;
+
+        if (!session.serialQueue.length) {
+            await bot.sendMessage(chatId, '✅ Немає лічильників для цього ресурсу');
+            session.state = BotState.IDLE;
+            return;
+        }
+
+        await sendCurrentSerialMappingMeter(bot, chatId);
+        return;
+    }
+
     if (data === 'self_accept') {
         await handleSelfAccept(bot, chatId);
         return;
@@ -275,6 +359,11 @@ bot.on('callback_query', async (query) => {
         await handleConfirm(bot, chatId, false);
         return;
     }
+
+    if (data === 'serial_skip') {
+        await handleSerialSkip(bot, chatId);
+        return;
+    }
 });
 
 bot.on('message', async (msg) => {
@@ -286,6 +375,11 @@ bot.on('message', async (msg) => {
 
     if (session.state === BotState.INPUT_READING) {
         await handleReadingInput(bot, chatId, msg.text);
+        return;
+    }
+
+    if (session.state === BotState.INPUT_SERIAL_APARTMENT) {
+        await handleSerialApartmentInput(bot, chatId, msg.text);
     }
 });
 

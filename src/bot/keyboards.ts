@@ -10,6 +10,12 @@ export function mainKeyboard(): InlineKeyboardMarkup {
                     callback_data: 'start_collection',
                 },
             ],
+            [
+                {
+                    text: '🔢 Привʼязка серійних номерів',
+                    callback_data: 'start_serial_mapping',
+                },
+            ],
         ],
     };
 }
@@ -125,6 +131,21 @@ export function resourceKeyboard(availableResourceTypes: ResourceType[]): Inline
             {
                 text: mode.label,
                 callback_data: `resource_scope:${mode.id}`,
+            },
+        ]),
+    };
+}
+
+export function singleResourceKeyboard(
+    availableResourceTypes: ResourceType[],
+    callbackPrefix: string,
+): InlineKeyboardMarkup {
+    const sorted = sortResources(availableResourceTypes);
+    return {
+        inline_keyboard: sorted.map((resourceType) => [
+            {
+                text: resourceShortLabel(resourceType),
+                callback_data: `${callbackPrefix}:${resourceType}`,
             },
         ]),
     };

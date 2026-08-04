@@ -149,6 +149,7 @@ model Meter {
   premises   Premises @relation(fields: [premisesId], references: [id])
 
   name      String
+  serialNumber String?
   resourceType String // "HOT_WATER", "HEATING"
   readings    Reading[] 
 

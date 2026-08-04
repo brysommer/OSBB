@@ -23,8 +23,19 @@ export interface QueueItem {
     selfSubmitted?: number;
 }
 
+export interface SerialMappingQueueItem {
+    meterId: string;
+    meterName: string;
+    serialNumber: string | null;
+    resourceType: ResourceType;
+    buildingNumber: string;
+    sectionNumber: string;
+    currentApartmentNumber: string;
+}
+
 export interface UserSession {
     state: BotState;
+    mode?: 'COLLECTION' | 'SERIAL_MAPPING';
 
     residentialComplexId?: string;
 
@@ -39,6 +50,10 @@ export interface UserSession {
     currentIndex: number;
 
     pendingValue?: number;
+
+    serialResourceType?: ResourceType;
+    serialQueue: SerialMappingQueueItem[];
+    serialCurrentIndex: number;
 }
 
 export const sessions = new Map<number, UserSession>();
@@ -49,6 +64,8 @@ export function getSession(chatId: number): UserSession {
             state: BotState.IDLE,
             queue: [],
             currentIndex: 0,
+            serialQueue: [],
+            serialCurrentIndex: 0,
         });
     }
 

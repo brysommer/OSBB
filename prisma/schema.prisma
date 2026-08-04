@@ -88,6 +88,7 @@ model Meter {
   dahId        String    @unique
   premisesId   String
   name         String
+  serialNumber String?
   createdAt    DateTime  @default(now())
   resourceType String
   premises     Premises  @relation(fields: [premisesId], references: [id])
