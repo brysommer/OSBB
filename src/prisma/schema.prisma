@@ -171,6 +171,7 @@ model Reading {
   diff      Float
   source    ReadingSource?
   status    ReadingStatus?
+  clientSyncId String? @unique
 
   exportedAt DateTime?
 

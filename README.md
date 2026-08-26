@@ -145,9 +145,39 @@ npm run migrate-dah-api-keys
 
 Скрипт зашифрує старі ключі та збереже їх у відповідних записах ЖК.
 
+## Мобільний офлайн-збір (Android)
+
+Додаток у папці `android/` — офлайн обхід з кнопками sync вниз/вгору.
+Деталі: [android/README.md](android/README.md).
+
+Змінні для API:
+
+```env
+MOBILE_API_KEY="секретний-ключ-для-додатку"
+MOBILE_API_PORT=8787
+```
+
+Запуск лише API:
+
+```bash
+npm run api
+```
+
+Запуск бота + API:
+
+```bash
+npm run dev
+```
+
 ## Запуск
 
-Режим розробки:
+Режим розробки (бот + mobile API):
+
+```bash
+npm run dev
+```
+
+Лише Telegram-бот (як раніше):
 
 ```bash
 npx ts-node src/bot/bot.ts
@@ -157,7 +187,7 @@ npx ts-node src/bot/bot.ts
 
 ```bash
 npm run build
-node dist/bot/bot.js
+node dist/index.js
 ```
 
 ## Допоміжні скрипти
@@ -179,11 +209,13 @@ prisma/
   migrations/                 міграції бази даних
   schema.prisma               основна Prisma-схема
 src/
+  api/                        HTTP API для Android sync
   bot/                        Telegram-бот, сесії та повідомлення
   repositories/               запити до показників
   scripts/                    імпорт і службові сценарії
   services/                   бізнес-логіка, ДАХ, черга та друк
   lib/prisma.ts               Prisma Client
+android/                      Kotlin Compose додаток офлайн-збору
 ```
 
 ## Безпека

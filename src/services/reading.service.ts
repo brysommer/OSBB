@@ -10,6 +10,8 @@ export interface SaveReadingInput {
     current: number;
 
     source: ReadingSource;
+    clientSyncId?: string;
+    status?: ReadingStatus;
 }
 
 export function validateReading(previous: number, current: number) {
@@ -51,8 +53,9 @@ export async function saveReading(input: SaveReadingInput) {
             current: input.current,
             diff: validation.diff,
 
-            status: validation.status,
+            status: input.status ?? validation.status,
             source: input.source,
+            clientSyncId: input.clientSyncId,
         },
     });
 

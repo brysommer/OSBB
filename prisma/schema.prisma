@@ -105,6 +105,8 @@ model Reading {
   createdAt    DateTime       @default(now())
   source       ReadingSource?
   status       ReadingStatus?
+  /// Ідемпотентність push з мобільного додатку
+  clientSyncId String?        @unique
   exportError  String?
   exportStatus ExportStatus?
   exportedAt   DateTime?
