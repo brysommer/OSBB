@@ -1,9 +1,21 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun prop(name: String, fallback: String): String =
+    (localProps.getProperty(name) ?: providers.gradleProperty(name).orNull ?: fallback)
+        .trim()
+        .trimEnd('/') + "/"
 
 android {
     namespace = "com.osbb.collector"
@@ -13,10 +25,38 @@ android {
         applicationId = "com.osbb.collector"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
-        buildConfigField("String", "DEFAULT_API_BASE", "\"http://10.0.2.2:8787/\"")
+        buildConfigField(
+            "String",
+            "DEFAULT_API_BASE",
+            "\"${prop("API_BASE_URL", "http://10.0.2.2:8787")}\"",
+        )
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            buildConfigField(
+                "String",
+                "DEFAULT_API_BASE",
+                "\"${prop("API_BASE_URL_DEBUG", prop("API_BASE_URL", "http://10.0.2.2:8787"))}\"",
+            )
+        }
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            buildConfigField(
+                "String",
+                "DEFAULT_API_BASE",
+                "\"${prop("API_BASE_URL", "http://10.0.2.2:8787")}\"",
+            )
+        }
     }
 
     buildFeatures {

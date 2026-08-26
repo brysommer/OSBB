@@ -1,0 +1,14 @@
+## This file is local only (gitignored). Copy to local.properties
+
+## Android SDK (Android Studio usually fills sdk.dir automatically)
+# sdk.dir=C\:\\Users\\YOU\\AppData\\Local\\Android\\Sdk
+
+## Default API for the app build
+## Phone on same Wi‑Fi as your PC/server:
+# API_BASE_URL=http://192.168.0.50:8787
+## Production server:
+# API_BASE_URL=http://49.13.142.186:8787
+## Emulator only:
+# API_BASE_URL=http://10.0.2.2:8787
+
+API_BASE_URL=http://10.0.2.2:8787

@@ -148,7 +148,9 @@ npm run migrate-dah-api-keys
 ## Мобільний офлайн-збір (Android)
 
 Додаток у папці `android/` — офлайн обхід з кнопками sync вниз/вгору.
-Деталі: [android/README.md](android/README.md).
+
+- Шпаргалка для збирачів: [android/INSTRUKTSIYA.md](android/INSTRUKTSIYA.md)
+- Збірка APK і сервер: [android/BUILD_APK.md](android/BUILD_APK.md)
 
 Змінні для API:
 
