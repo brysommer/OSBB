@@ -153,9 +153,10 @@ npm run migrate-dah-api-keys
 Змінні для API:
 
 ```env
-MOBILE_API_KEY="секретний-ключ-для-додатку"
 MOBILE_API_PORT=8787
 ```
+
+Логін у додатку — лише Telegram ID; права беруться з `UserAccess`, як у боті.
 
 Запуск лише API:
 

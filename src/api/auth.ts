@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../lib/prisma';
-import { registerTelegramUser } from '../services/user.service';
+import { getAvailableResidentialComplexes } from '../services/userAccess.service';
 
 export type AuthedRequest = Request & {
     telegramId: bigint;
@@ -23,32 +23,38 @@ function randomToken(): string {
 }
 
 export async function loginMobile(req: Request, res: Response) {
-    const apiKey = process.env.MOBILE_API_KEY;
-    if (!apiKey) {
-        res.status(500).json({ error: 'MOBILE_API_KEY не налаштовано на сервері' });
-        return;
-    }
-
-    const providedKey = String(req.header('x-api-key') || req.body?.apiKey || '');
-    if (providedKey !== apiKey) {
-        res.status(401).json({ error: 'Невірний API-ключ' });
-        return;
-    }
-
     const telegramIdRaw = req.body?.telegramId;
     const telegramIdNum = Number(telegramIdRaw);
     if (!Number.isFinite(telegramIdNum) || telegramIdNum <= 0) {
-        res.status(400).json({ error: 'Потрібен telegramId' });
+        res.status(400).json({ error: 'Введіть Telegram ID числом' });
         return;
     }
 
-    const user = await registerTelegramUser(telegramIdNum);
-    if (req.body?.name && typeof req.body.name === 'string') {
-        await prisma.telegramUser.update({
-            where: { id: user.id },
-            data: { name: req.body.name },
+    const user = await prisma.telegramUser.findUnique({
+        where: { telegramId: BigInt(telegramIdNum) },
+        select: {
+            id: true,
+            name: true,
+            telegramId: true,
+            accesses: { select: { id: true } },
+        },
+    });
+
+    if (!user) {
+        res.status(403).json({
+            error: 'Користувача з таким Telegram ID немає. Спочатку додайте його в боті.',
         });
+        return;
     }
+
+    if (!user.accesses.length) {
+        res.status(403).json({
+            error: 'Немає доступу до жодного ЖК. Зверніться до адміністратора.',
+        });
+        return;
+    }
+
+    const complexes = await getAvailableResidentialComplexes(telegramIdNum);
 
     const token = randomToken();
     sessions.set(token, {
@@ -62,8 +68,13 @@ export async function loginMobile(req: Request, res: Response) {
         user: {
             id: user.id,
             telegramId: telegramIdNum,
-            name: req.body?.name || user.name,
+            name: user.name,
         },
+        complexes: complexes.map((c) => ({
+            id: c.id,
+            name: c.name,
+            shortName: c.shortName,
+        })),
     });
 }
 

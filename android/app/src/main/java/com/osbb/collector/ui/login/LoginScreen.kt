@@ -1,11 +1,23 @@
 package com.osbb.collector.ui.login
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -16,27 +28,15 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.Button
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.text.KeyboardOptions
+import retrofit2.HttpException
 
 data class LoginUiState(
     val apiBase: String = BuildConfig.DEFAULT_API_BASE,
-    val apiKey: String = "",
     val telegramId: String = "",
-    val name: String = "",
     val loading: Boolean = false,
     val error: String? = null,
     val success: Boolean = false,
+    val showServer: Boolean = false,
 )
 
 class LoginViewModel(
@@ -51,9 +51,7 @@ class LoginViewModel(
             _state.update {
                 it.copy(
                     apiBase = sessionStore.apiBase(),
-                    apiKey = sessionStore.apiKey(),
                     telegramId = sessionStore.telegramId(),
-                    name = sessionStore.userName(),
                 )
             }
         }
@@ -67,21 +65,29 @@ class LoginViewModel(
         val s = _state.value
         val telegramId = s.telegramId.trim().toLongOrNull()
         if (telegramId == null) {
-            _state.update { it.copy(error = "Введіть telegramId числом") }
-            return
-        }
-        if (s.apiKey.isBlank()) {
-            _state.update { it.copy(error = "Введіть MOBILE_API_KEY") }
+            _state.update { it.copy(error = "Введіть свій Telegram ID числом") }
             return
         }
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             try {
-                repo.login(s.apiBase, s.apiKey.trim(), telegramId, s.name.trim())
+                repo.login(s.apiBase, telegramId)
                 _state.update { it.copy(loading = false, success = true) }
+            } catch (e: HttpException) {
+                val body = e.response()?.errorBody()?.string().orEmpty()
+                val message = Regex("\"error\"\\s*:\\s*\"([^\"]+)\"").find(body)?.groupValues?.getOrNull(1)
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = message ?: when (e.code()) {
+                            403 -> "Немає доступу для цього Telegram ID"
+                            else -> "Помилка входу (${e.code()})"
+                        },
+                    )
+                }
             } catch (e: Exception) {
                 _state.update {
-                    it.copy(loading = false, error = e.message ?: "Помилка входу")
+                    it.copy(loading = false, error = e.message ?: "Немає звʼязку з сервером")
                 }
             }
         }
@@ -111,38 +117,43 @@ fun LoginScreen(viewModel: LoginViewModel, onLoggedIn: () -> Unit) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("OSBB — офлайн збір", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
-        Text("Увійдіть своїм Telegram ID (як у боті)")
+        Text("OSBB — офлайн збір", style = MaterialTheme.typography.headlineSmall)
+        Text("Введіть свій Telegram ID — права підтягнуться з бази, як у боті.")
 
-        OutlinedTextField(
-            value = state.apiBase,
-            onValueChange = { v -> viewModel.update { it.copy(apiBase = v) } },
-            label = { Text("API URL") },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = state.apiKey,
-            onValueChange = { v -> viewModel.update { it.copy(apiKey = v) } },
-            label = { Text("MOBILE_API_KEY") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-        )
         OutlinedTextField(
             value = state.telegramId,
             onValueChange = { v -> viewModel.update { it.copy(telegramId = v) } },
             label = { Text("Telegram ID") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = state.name,
-            onValueChange = { v -> viewModel.update { it.copy(name = v) } },
-            label = { Text("Імʼя (опційно)") },
-            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
         )
 
+        Button(
+            onClick = {
+                viewModel.update { it.copy(showServer = !it.showServer) }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (state.showServer) "Сховати адресу сервера" else "Адреса сервера")
+        }
+
+        if (state.showServer) {
+            OutlinedTextField(
+                value = state.apiBase,
+                onValueChange = { v -> viewModel.update { it.copy(apiBase = v) } },
+                label = { Text("API URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Text(
+                "Емулятор: http://10.0.2.2:8787/\nТелефон: http://IP-сервера:8787/",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
         if (state.error != null) {
-            Text(state.error!!, color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+            Text(state.error!!, color = MaterialTheme.colorScheme.error)
         }
 
         Button(

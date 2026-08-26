@@ -9,20 +9,18 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
-import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Query
 import com.osbb.collector.data.prefs.SessionStore
 
 data class LoginRequest(
     val telegramId: Long,
-    val apiKey: String,
-    val name: String? = null,
 )
 
 data class LoginResponse(
     val token: String,
     val user: LoginUser,
+    val complexes: List<ComplexDto> = emptyList(),
 )
 
 data class LoginUser(
@@ -106,10 +104,7 @@ data class PushResultDto(
 
 interface MobileApi {
     @POST("api/mobile/auth/login")
-    suspend fun login(
-        @Header("x-api-key") apiKey: String,
-        @Body body: LoginRequest,
-    ): LoginResponse
+    suspend fun login(@Body body: LoginRequest): LoginResponse
 
     @GET("api/mobile/complexes")
     suspend fun complexes(): ComplexesResponse

@@ -13,7 +13,6 @@ private val Context.dataStore by preferencesDataStore("session")
 class SessionStore(private val context: Context) {
     private val tokenKey = stringPreferencesKey("token")
     private val apiBaseKey = stringPreferencesKey("api_base")
-    private val apiKeyKey = stringPreferencesKey("api_key")
     private val telegramIdKey = stringPreferencesKey("telegram_id")
     private val userNameKey = stringPreferencesKey("user_name")
 
@@ -24,8 +23,6 @@ class SessionStore(private val context: Context) {
     suspend fun apiBase(): String =
         context.dataStore.data.first()[apiBaseKey] ?: "http://10.0.2.2:8787/"
 
-    suspend fun apiKey(): String = context.dataStore.data.first()[apiKeyKey] ?: ""
-
     suspend fun telegramId(): String = context.dataStore.data.first()[telegramIdKey] ?: ""
 
     suspend fun userName(): String = context.dataStore.data.first()[userNameKey] ?: ""
@@ -33,14 +30,12 @@ class SessionStore(private val context: Context) {
     suspend fun saveLogin(
         token: String,
         apiBase: String,
-        apiKey: String,
         telegramId: String,
         userName: String,
     ) {
         context.dataStore.edit {
             it[tokenKey] = token
             it[apiBaseKey] = apiBase.trimEnd('/') + "/"
-            it[apiKeyKey] = apiKey
             it[telegramIdKey] = telegramId
             it[userNameKey] = userName
         }

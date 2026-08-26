@@ -17,25 +17,20 @@ class SyncRepository(
     private val meterDao: MeterDao,
     private val pendingDao: PendingReadingDao,
 ) {
-    suspend fun login(apiBase: String, apiKey: String, telegramId: Long, name: String) {
+    suspend fun login(apiBase: String, telegramId: Long) {
         sessionStore.saveLogin(
             token = "",
             apiBase = apiBase,
-            apiKey = apiKey,
             telegramId = telegramId.toString(),
-            userName = name,
+            userName = "",
         )
         val api = apiFactory.create(authRequired = false)
-        val response = api.login(
-            apiKey = apiKey,
-            body = LoginRequest(telegramId = telegramId, apiKey = apiKey, name = name.ifBlank { null }),
-        )
+        val response = api.login(LoginRequest(telegramId = telegramId))
         sessionStore.saveLogin(
             token = response.token,
             apiBase = apiBase,
-            apiKey = apiKey,
             telegramId = telegramId.toString(),
-            userName = response.user.name ?: name,
+            userName = response.user.name.orEmpty(),
         )
     }
 
