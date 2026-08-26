@@ -3,16 +3,22 @@ package com.osbb.collector.ui.home
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,7 +30,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -36,6 +44,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
+    val userName: String = "",
     val complexes: List<ComplexDto> = emptyList(),
     val period: String = "",
     val selectedComplexId: String? = null,
@@ -43,6 +52,8 @@ data class HomeUiState(
     val sectionsByBuilding: Map<String, List<String>> = emptyMap(),
     val selectedBuilding: String? = null,
     val selectedSection: String? = null,
+    val metersTotal: Int = 0,
+    val metersTodo: Int = 0,
     val pendingCount: Int = 0,
     val message: String? = null,
     val error: String? = null,
@@ -61,19 +72,30 @@ class HomeViewModel(private val repo: SyncRepository) : ViewModel() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             try {
+                val name = repo.userName()
                 val complexes = repo.loadComplexes()
                 val pending = repo.pendingCount()
+                val (lastComplex, lastBuilding, lastSection) = repo.lastSelection()
+                val complexId =
+                    _state.value.selectedComplexId
+                        ?: lastComplex
+                        ?: complexes.complexes.firstOrNull()?.id
+
                 _state.update {
                     it.copy(
+                        userName = name,
                         complexes = complexes.complexes,
                         period = complexes.period,
                         pendingCount = pending,
                         loading = false,
-                        selectedComplexId = it.selectedComplexId ?: complexes.complexes.firstOrNull()?.id,
+                        selectedComplexId = complexId,
+                        selectedBuilding = lastBuilding,
+                        selectedSection = lastSection,
                     )
                 }
-                val complexId = _state.value.selectedComplexId
-                if (complexId != null) loadStructure(complexId)
+                if (complexId != null) {
+                    loadStructure(complexId, preferBuilding = lastBuilding, preferSection = lastSection)
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(loading = false, error = e.message) }
             }
@@ -87,29 +109,40 @@ class HomeViewModel(private val repo: SyncRepository) : ViewModel() {
                 selectedBuilding = null,
                 selectedSection = null,
                 buildings = emptyList(),
+                metersTotal = 0,
+                metersTodo = 0,
             )
         }
         loadStructure(id)
     }
 
-    private fun loadStructure(complexId: String) {
+    private fun loadStructure(
+        complexId: String,
+        preferBuilding: String? = null,
+        preferSection: String? = null,
+    ) {
         viewModelScope.launch {
             try {
                 val structure = repo.loadStructure(complexId)
                 val map = structure.buildings.associate { it.buildingNumber to it.sections }
+                val building =
+                    preferBuilding?.takeIf { map.containsKey(it) }
+                        ?: _state.value.selectedBuilding?.takeIf { map.containsKey(it) }
+                        ?: structure.buildings.firstOrNull()?.buildingNumber
+                val sections = building?.let { map[it].orEmpty() }.orEmpty()
+                val section =
+                    preferSection?.takeIf { sections.contains(it) }
+                        ?: sections.firstOrNull()
+
                 _state.update {
                     it.copy(
                         buildings = structure.buildings.map { b -> b.buildingNumber },
                         sectionsByBuilding = map,
-                        selectedBuilding = it.selectedBuilding ?: structure.buildings.firstOrNull()?.buildingNumber,
-                        selectedSection = null,
+                        selectedBuilding = building,
+                        selectedSection = section,
                     )
                 }
-                val building = _state.value.selectedBuilding
-                if (building != null) {
-                    val sections = map[building].orEmpty()
-                    _state.update { it.copy(selectedSection = sections.firstOrNull()) }
-                }
+                refreshStats()
             } catch (e: Exception) {
                 _state.update { it.copy(error = e.message) }
             }
@@ -124,10 +157,29 @@ class HomeViewModel(private val repo: SyncRepository) : ViewModel() {
                 selectedSection = sections.firstOrNull(),
             )
         }
+        refreshStats()
     }
 
     fun selectSection(section: String) {
         _state.update { it.copy(selectedSection = section) }
+        refreshStats()
+    }
+
+    private fun refreshStats() {
+        val s = _state.value
+        val complexId = s.selectedComplexId ?: return
+        val building = s.selectedBuilding ?: return
+        val section = s.selectedSection ?: return
+        viewModelScope.launch {
+            val stats = repo.sectionStats(complexId, building, section)
+            _state.update {
+                it.copy(
+                    metersTotal = stats.metersTotal,
+                    metersTodo = stats.metersTodo,
+                    pendingCount = stats.pendingUpload,
+                )
+            }
+        }
     }
 
     fun pull() {
@@ -139,15 +191,18 @@ class HomeViewModel(private val repo: SyncRepository) : ViewModel() {
             _state.update { it.copy(loading = true, message = null, error = null) }
             try {
                 val count = repo.pull(complexId, building, section)
+                val stats = repo.sectionStats(complexId, building, section)
                 _state.update {
                     it.copy(
                         loading = false,
-                        message = "Завантажено $count лічильників (період ${s.period})",
-                        pendingCount = repo.pendingCount(),
+                        message = "Завантажено $count лічильників. Можна йти в обхід.",
+                        metersTotal = stats.metersTotal,
+                        metersTodo = stats.metersTodo,
+                        pendingCount = stats.pendingUpload,
                     )
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message) }
+                _state.update { it.copy(loading = false, error = e.message ?: "Помилка завантаження") }
             }
         }
     }
@@ -157,6 +212,7 @@ class HomeViewModel(private val repo: SyncRepository) : ViewModel() {
             _state.update { it.copy(loading = true, message = null, error = null) }
             try {
                 val msg = repo.pushPending()
+                refreshStats()
                 _state.update {
                     it.copy(
                         loading = false,
@@ -165,8 +221,19 @@ class HomeViewModel(private val repo: SyncRepository) : ViewModel() {
                     )
                 }
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message) }
+                _state.update { it.copy(loading = false, error = e.message ?: "Помилка вивантаження") }
             }
+        }
+    }
+
+    fun rememberAndStart(onStart: (String, String, String) -> Unit) {
+        val s = _state.value
+        val complexId = s.selectedComplexId ?: return
+        val building = s.selectedBuilding ?: return
+        val section = s.selectedSection ?: return
+        viewModelScope.launch {
+            repo.rememberSelection(complexId, building, section)
+            onStart(complexId, building, section)
         }
     }
 
@@ -195,15 +262,33 @@ fun HomeScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Синхронізація", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
+            Column {
+                Text(
+                    if (state.userName.isNotBlank()) "Вітаю, ${state.userName}" else "OSBB збір",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text("Період: ${state.period.ifBlank { "—" }}")
+            }
             TextButton(onClick = onLogout) { Text("Вийти") }
         }
 
-        Text("Період: ${state.period.ifBlank { "—" }}")
-        Text("Локально не вивантажено: ${state.pendingCount}")
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Локально в підʼїзді: ${state.metersTotal}")
+                Text("Ще зняти: ${state.metersTodo}")
+                Text(
+                    "Чекають вивантаження: ${state.pendingCount}",
+                    fontWeight = if (state.pendingCount > 0) FontWeight.Bold else FontWeight.Normal,
+                )
+            }
+        }
 
         DropdownField(
             label = "ЖК",
@@ -224,29 +309,42 @@ fun HomeScreen(
             onSelect = { viewModel.selectSection(it) },
         )
 
-        Button(onClick = viewModel::pull, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
-            Text("⬇ Синхронізувати (завантажити)")
-        }
-        Button(
-            onClick = {
-                val s = state
-                if (s.selectedComplexId != null && s.selectedBuilding != null && s.selectedSection != null) {
-                    onStartCollect(s.selectedComplexId!!, s.selectedBuilding!!, s.selectedSection!!)
-                }
-            },
+        Spacer(Modifier.height(4.dp))
+
+        BigButton(
+            text = "1. Завантажити підʼїзд",
             enabled = !state.loading,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("▶ Почати обхід офлайн")
-        }
-        Button(onClick = viewModel::push, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
-            Text("⬆ Синхронізувати (вивантажити)")
-        }
+            onClick = viewModel::pull,
+        )
+        BigButton(
+            text = "2. Обхід офлайн",
+            enabled = !state.loading && state.metersTotal > 0,
+            onClick = { viewModel.rememberAndStart(onStartCollect) },
+        )
+        BigButton(
+            text = "3. Вивантажити покази (${state.pendingCount})",
+            enabled = !state.loading && state.pendingCount > 0,
+            onClick = viewModel::push,
+        )
 
         if (state.message != null) Text(state.message!!)
         if (state.error != null) {
-            Text(state.error!!, color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+            Text(state.error!!, color = MaterialTheme.colorScheme.error)
         }
+    }
+}
+
+@Composable
+private fun BigButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        colors = ButtonDefaults.buttonColors(),
+    ) {
+        Text(text, fontSize = 18.sp)
     }
 }
 

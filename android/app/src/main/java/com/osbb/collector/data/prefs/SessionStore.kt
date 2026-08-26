@@ -15,6 +15,9 @@ class SessionStore(private val context: Context) {
     private val apiBaseKey = stringPreferencesKey("api_base")
     private val telegramIdKey = stringPreferencesKey("telegram_id")
     private val userNameKey = stringPreferencesKey("user_name")
+    private val lastComplexKey = stringPreferencesKey("last_complex")
+    private val lastBuildingKey = stringPreferencesKey("last_building")
+    private val lastSectionKey = stringPreferencesKey("last_section")
 
     val tokenFlow: Flow<String?> = context.dataStore.data.map { it[tokenKey] }
 
@@ -27,6 +30,12 @@ class SessionStore(private val context: Context) {
 
     suspend fun userName(): String = context.dataStore.data.first()[userNameKey] ?: ""
 
+    suspend fun lastComplexId(): String? = context.dataStore.data.first()[lastComplexKey]
+
+    suspend fun lastBuilding(): String? = context.dataStore.data.first()[lastBuildingKey]
+
+    suspend fun lastSection(): String? = context.dataStore.data.first()[lastSectionKey]
+
     suspend fun saveLogin(
         token: String,
         apiBase: String,
@@ -38,6 +47,14 @@ class SessionStore(private val context: Context) {
             it[apiBaseKey] = apiBase.trimEnd('/') + "/"
             it[telegramIdKey] = telegramId
             it[userNameKey] = userName
+        }
+    }
+
+    suspend fun saveLastSelection(complexId: String, building: String, section: String) {
+        context.dataStore.edit {
+            it[lastComplexKey] = complexId
+            it[lastBuildingKey] = building
+            it[lastSectionKey] = section
         }
     }
 

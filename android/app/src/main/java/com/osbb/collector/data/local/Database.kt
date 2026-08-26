@@ -63,6 +63,17 @@ interface MeterDao {
     @Query("SELECT * FROM meters WHERE meterId = :meterId LIMIT 1")
     suspend fun byId(meterId: String): MeterEntity?
 
+    @Query("UPDATE meters SET alreadyCollected = 1 WHERE meterId = :meterId")
+    suspend fun markCollected(meterId: String)
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM meters
+        WHERE complexId = :complexId AND buildingNumber = :building AND sectionNumber = :section
+        """,
+    )
+    suspend fun countSection(complexId: String, building: String, section: String): Int
+
     @Query("SELECT COUNT(*) FROM meters")
     suspend fun count(): Int
 }

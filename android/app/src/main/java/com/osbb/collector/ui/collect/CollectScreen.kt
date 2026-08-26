@@ -2,11 +2,18 @@ package com.osbb.collector.ui.collect
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -17,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -34,6 +42,8 @@ data class CollectUiState(
     val message: String? = null,
     val error: String? = null,
     val finished: Boolean = false,
+    val confirmSuspicious: Boolean = false,
+    val pendingValue: Double? = null,
 )
 
 class CollectViewModel(
@@ -58,18 +68,36 @@ class CollectViewModel(
                     index = 0,
                     input = queue.firstOrNull()?.selfSubmitted?.toString().orEmpty(),
                     finished = queue.isEmpty(),
-                    message = if (queue.isEmpty()) "Немає лічильників — спочатку завантажте sync" else null,
+                    message = if (queue.isEmpty()) {
+                        "Немає лічильників для зняття. Спочатку «Завантажити підʼїзд»."
+                    } else {
+                        null
+                    },
+                    confirmSuspicious = false,
+                    pendingValue = null,
+                    error = null,
                 )
             }
         }
     }
 
     fun updateInput(value: String) {
-        _state.update { it.copy(input = value, error = null) }
+        _state.update {
+            it.copy(input = value, error = null, confirmSuspicious = false, pendingValue = null)
+        }
     }
 
     fun skip() {
         next()
+    }
+
+    fun acceptSelf() {
+        val meter = _state.value.queue.getOrNull(_state.value.index) ?: return
+        val self = meter.selfSubmitted ?: return
+        viewModelScope.launch {
+            repo.saveLocalReading(meter, self)
+            next()
+        }
     }
 
     fun save() {
@@ -81,12 +109,41 @@ class CollectViewModel(
             return
         }
         if (current < meter.previous) {
-            _state.update { it.copy(error = "Показник менший за попередній (${meter.previous})") }
+            _state.update { it.copy(error = "Менше попереднього (${meter.previous})") }
             return
         }
+
+        val diff = current - meter.previous
+        val suspicious = meter.previous > 0 && diff > meter.previous * 2
+        if (suspicious && !s.confirmSuspicious) {
+            _state.update {
+                it.copy(
+                    confirmSuspicious = true,
+                    pendingValue = current,
+                    error = "Підозрілий стрибок: було ${meter.previous}, стало $current (Δ $diff). Підтвердіть.",
+                )
+            }
+            return
+        }
+
         viewModelScope.launch {
             repo.saveLocalReading(meter, current)
             next()
+        }
+    }
+
+    fun confirmSuspiciousYes() {
+        val value = _state.value.pendingValue ?: return
+        val meter = _state.value.queue.getOrNull(_state.value.index) ?: return
+        viewModelScope.launch {
+            repo.saveLocalReading(meter, value)
+            next()
+        }
+    }
+
+    fun confirmSuspiciousNo() {
+        _state.update {
+            it.copy(confirmSuspicious = false, pendingValue = null, error = null, input = "")
         }
     }
 
@@ -94,7 +151,13 @@ class CollectViewModel(
         _state.update { state ->
             val nextIndex = state.index + 1
             if (nextIndex >= state.queue.size) {
-                state.copy(finished = true, message = "Підʼїзд пройдено. Зробіть sync вивантаження.")
+                state.copy(
+                    finished = true,
+                    message = "Підʼїзд пройдено. Поверніться і натисніть «Вивантажити покази».",
+                    confirmSuspicious = false,
+                    pendingValue = null,
+                    error = null,
+                )
             } else {
                 val next = state.queue[nextIndex]
                 state.copy(
@@ -102,6 +165,8 @@ class CollectViewModel(
                     input = next.selfSubmitted?.toString().orEmpty(),
                     error = null,
                     message = null,
+                    confirmSuspicious = false,
+                    pendingValue = null,
                 )
             }
         }
@@ -126,31 +191,55 @@ class CollectViewModel(
 fun CollectScreen(viewModel: CollectViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val meter = state.queue.getOrNull(state.index)
+    val progress =
+        if (state.queue.isEmpty()) 0f
+        else (state.index.toFloat() / state.queue.size.toFloat()).coerceIn(0f, 1f)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         TextButton(onClick = onBack) { Text("← Назад") }
 
         if (state.finished || meter == null) {
-            Text(state.message ?: "Готово")
-            Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
-                Text("До синхронізації")
+            Text(state.message ?: "Готово", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onBack,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Text("До вивантаження", fontSize = 18.sp)
             }
             return
         }
 
-        Text("Обхід ${state.index + 1} / ${state.queue.size}")
+        Text("${state.index + 1} / ${state.queue.size}", fontSize = 16.sp)
+        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+
+        Text(
+            "Поверх ${meter.floor ?: "—"}  ·  кв. ${meter.apartmentNumber}",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(resourceLabel(meter.resourceType), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Text("Буд. ${meter.buildingNumber}, підʼїзд ${meter.sectionNumber}")
-        Text("Поверх: ${meter.floor ?: "—"}")
-        Text("Квартира: ${meter.apartmentNumber}", fontWeight = FontWeight.Bold)
-        Text("Ресурс: ${resourceLabel(meter.resourceType)}")
-        Text("Попередній: ${meter.previous}")
+        Text("Попередній: ${meter.previous}", fontSize = 18.sp)
+
         if (meter.selfSubmitted != null) {
-            Text("Самостійно подано: ${meter.selfSubmitted}")
+            Text("Мешканець подав: ${meter.selfSubmitted}", fontSize = 18.sp)
+            Button(
+                onClick = viewModel::acceptSelf,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) {
+                Text("Прийняти самостійний", fontSize = 17.sp)
+            }
         }
 
         OutlinedTextField(
@@ -159,25 +248,56 @@ fun CollectScreen(viewModel: CollectViewModel, onBack: () -> Unit) {
             label = { Text("Новий показник") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.headlineSmall,
+            singleLine = true,
         )
 
         if (state.error != null) {
-            Text(state.error!!, color = androidx.compose.material3.MaterialTheme.colorScheme.error)
+            Text(state.error!!, color = MaterialTheme.colorScheme.error, fontSize = 16.sp)
         }
 
-        Button(onClick = viewModel::save, modifier = Modifier.fillMaxWidth()) {
-            Text("Зберегти локально")
-        }
-        Button(onClick = viewModel::skip, modifier = Modifier.fillMaxWidth()) {
-            Text("Пропустити")
+        if (state.confirmSuspicious) {
+            Button(
+                onClick = viewModel::confirmSuspiciousYes,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Text("Так, зберегти", fontSize = 18.sp)
+            }
+            OutlinedButton(
+                onClick = viewModel::confirmSuspiciousNo,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) {
+                Text("Ввести ще раз", fontSize = 17.sp)
+            }
+        } else {
+            Button(
+                onClick = viewModel::save,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+            ) {
+                Text("Зберегти", fontSize = 18.sp)
+            }
+            OutlinedButton(
+                onClick = viewModel::skip,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            ) {
+                Text("Пропустити", fontSize = 17.sp)
+            }
         }
     }
 }
 
 private fun resourceLabel(type: String): String = when (type) {
-    "COLD_WATER" -> "ХВ"
-    "HOT_WATER" -> "ГВ"
-    "ELECTRICITY" -> "ЕЕ"
-    "HEATING" -> "ОП"
+    "COLD_WATER" -> "Холодна вода"
+    "HOT_WATER" -> "Гаряча вода"
+    "ELECTRICITY" -> "Електрика"
+    "HEATING" -> "Підігрів"
     else -> type
 }
