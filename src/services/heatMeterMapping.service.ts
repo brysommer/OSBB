@@ -41,6 +41,7 @@ export async function getHeatMappingQueue(
     const meters = await prisma.meter.findMany({
         where: {
             resourceType: ResourceType.HEATING,
+            hiddenFromCollection: false,
             premises: {
                 residentialComplexId,
                 buildingNumber,

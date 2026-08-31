@@ -97,6 +97,7 @@ export async function buildQueue(
     const period = getCurrentPeriod();
 
     const where: any = {
+        hiddenFromCollection: false,
         premises: {
             residentialComplexId,
             buildingNumber,

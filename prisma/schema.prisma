@@ -91,6 +91,7 @@ model Meter {
   serialNumber String?
   createdAt    DateTime  @default(now())
   resourceType String
+  hiddenFromCollection Boolean @default(false)
   premises     Premises  @relation(fields: [premisesId], references: [id])
   readings     Reading[]
   details      MeterDetail[]
