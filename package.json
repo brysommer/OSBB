@@ -7,6 +7,7 @@
         "dev": "ts-node src/index.ts",
         "api": "ts-node src/api/server.ts",
         "build": "tsc",
+        "test:heat-mapping": "node --test -r ts-node/register src/services/heatMeterMapping.test.ts",
         "start": "node dist/index.js",
         "import-premises": "ts-node src/scripts/import-premises.ts",
         "import-readings": "ts-node src/scripts/import-readings.ts",
@@ -22,6 +23,8 @@
     "dependencies": {
         "@prisma/client": "^6.14.0",
         "axios": "^1.18.0",
+        "basic-ftp": "^6.2.1",
+        "better-sqlite3": "^13.0.3",
         "cors": "^2.8.6",
         "date-fns": "^4.1.0",
         "dotenv": "^17.2.1",
@@ -30,14 +33,17 @@
         "json2csv": "^6.0.0-alpha.2",
         "node-telegram-bot-api": "^0.66.0",
         "openai": "^6.43.0",
-        "qrcode": "^1.5.4"
+        "qrcode": "^1.5.4",
+        "ssh2-sftp-client": "^12.1.1"
     },
     "devDependencies": {
+        "@types/better-sqlite3": "^9.6.0",
         "@types/cors": "^2.8.19",
         "@types/express": "^5.0.6",
         "@types/json2csv": "^5.0.7",
         "@types/node": "^24.3.0",
         "@types/node-telegram-bot-api": "^0.64.10",
+        "@types/ssh2-sftp-client": "^9.0.6",
         "prisma": "^6.14.0",
         "ts-node": "^10.9.2",
         "typescript": "^5.9.2"

@@ -93,6 +93,48 @@ model Meter {
   resourceType String
   premises     Premises  @relation(fields: [premisesId], references: [id])
   readings     Reading[]
+  details      MeterDetail[]
+}
+
+model MeterDetail {
+  id                     String    @id @default(cuid())
+  snapshotDate           DateTime
+  serialNumber           String
+  manufacturer           String?
+  deviceType             String?
+  deviceVersion          Int?
+  deviceStatus           String
+  requestedAt            String?
+  deviceAt               String?
+  energy                 Float?
+  energyUnit             String?
+  volume                 Float?
+  volumeUnit             String?
+  power                  Float?
+  powerUnit              String?
+  flow                   Float?
+  flowUnit               String?
+  temperature1           Float?
+  temperature1Unit       String?
+  temperature2           Float?
+  temperature2Unit       String?
+  temperatureDifference  Float?
+  temperatureDifferenceUnit String?
+  errorFlag              Int?
+  statusField            String?
+  operatingTime          Int?
+  operatingTimeUnit      String?
+  operatingTimeWithError Int?
+  operatingTimeWithErrorUnit String?
+  rawData                Json?
+  sourceFile             String?
+  importedAt             DateTime  @default(now())
+  meterId                String?
+  meter                  Meter?    @relation(fields: [meterId], references: [id], onDelete: SetNull)
+
+  @@unique([snapshotDate, serialNumber, manufacturer])
+  @@index([serialNumber])
+  @@index([meterId, snapshotDate])
 }
 
 model Reading {

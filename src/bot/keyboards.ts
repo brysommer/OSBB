@@ -1,22 +1,33 @@
 import { InlineKeyboardMarkup } from 'node-telegram-bot-api';
 import { ResourceType } from '@prisma/client';
 
-export function mainKeyboard(): InlineKeyboardMarkup {
-    return {
-        inline_keyboard: [
-            [
-                {
-                    text: '▶️ Розпочати обхід',
-                    callback_data: 'start_collection',
-                },
-            ],
-            [
-                {
-                    text: '🔢 Привʼязка серійних номерів',
-                    callback_data: 'start_serial_mapping',
-                },
-            ],
+export function mainKeyboard(showHeatMapping = false): InlineKeyboardMarkup {
+    const rows = [
+        [
+            {
+                text: '▶️ Розпочати обхід',
+                callback_data: 'start_collection',
+            },
         ],
+        [
+            {
+                text: '🔢 Привʼязка серійних номерів',
+                callback_data: 'start_serial_mapping',
+            },
+        ],
+    ];
+
+    if (showHeatMapping) {
+        rows.push([
+            {
+                text: '🔥 Встановити відповідність теплових',
+                callback_data: 'start_heat_mapping',
+            },
+        ]);
+    }
+
+    return {
+        inline_keyboard: rows,
     };
 }
 

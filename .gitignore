@@ -5,6 +5,7 @@ node_modules
 /src/prisma/migrations/
 /src/prisma/generated/
 dist/
+/data/askoe/
 /src/tmp
 tmp/
 web/
