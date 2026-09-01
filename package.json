@@ -12,7 +12,8 @@
         "import-premises": "ts-node src/scripts/import-premises.ts",
         "import-readings": "ts-node src/scripts/import-readings.ts",
         "migrate-dah-api-keys": "ts-node src/scripts/migrate-dah-api-keys.ts",
-        "sync-building-sections": "ts-node src/scripts/sync-building-sections.ts"
+        "sync-building-sections": "ts-node src/scripts/sync-building-sections.ts",
+        "test:privat24": "ts-node src/scripts/test-privat24.ts"
     },
     "prisma": {
         "schema": "prisma/schema.prisma"

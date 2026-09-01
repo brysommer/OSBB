@@ -6,6 +6,7 @@ node_modules
 /src/prisma/generated/
 dist/
 /data/askoe/
+/data/privat24/
 /src/tmp
 tmp/
 web/

@@ -42,6 +42,7 @@ import { registerPutReadingsHandler } from './handlers/putReadings.handler';
 import { getAvailableResidentialComplexes } from '../services/userAccess.service';
 import { registerTelegramUser } from '../services/user.service';
 import { startAskoeScheduler } from '../services/askoeScheduler.service';
+import { startPrivat24Scheduler } from '../services/privat24Scheduler.service';
 
 dotenv.config();
 
@@ -498,3 +499,4 @@ bot.on('callback_query', async (query) => {
 
 registerPutReadingsHandler(bot);
 startAskoeScheduler(bot);
+startPrivat24Scheduler(bot);
