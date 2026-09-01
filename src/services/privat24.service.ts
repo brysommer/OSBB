@@ -1,4 +1,5 @@
 import axios from 'axios';
+import iconv from 'iconv-lite';
 import 'dotenv/config';
 
 const BASE_URL = 'https://acp.privatbank.ua/api';
@@ -113,7 +114,7 @@ async function privat24Get<T extends BalanceRow | TransactionRow>(
     config: Privat24Config,
     params: Record<string, string | number | undefined>,
 ): Promise<PaginatedResponse<T>> {
-    const response = await axios.get<PaginatedResponse<T>>(path, {
+    const response = await axios.get<ArrayBuffer>(path, {
         baseURL: BASE_URL,
         params,
         headers: {
@@ -121,15 +122,20 @@ async function privat24Get<T extends BalanceRow | TransactionRow>(
             Token: config.token,
             token: config.token,
             Accept: 'application/json',
+            'Content-Type': 'application/json;charset=windows-1251',
         },
+        responseType: 'arraybuffer',
         timeout: 30_000,
     });
 
-    if (response.data.status && response.data.status !== 'SUCCESS') {
-        throw new Error(`Privat24 API status: ${response.data.status}`);
+    const text = iconv.decode(Buffer.from(response.data), 'win1251');
+    const data = JSON.parse(text) as PaginatedResponse<T>;
+
+    if (data.status && data.status !== 'SUCCESS') {
+        throw new Error(`Privat24 API status: ${data.status}`);
     }
 
-    return response.data;
+    return data;
 }
 
 async function fetchAllPages<T extends BalanceRow | TransactionRow>(
