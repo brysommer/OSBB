@@ -1,6 +1,7 @@
 import { ResourceType } from '@prisma/client';
 import { BotState } from './states';
 import { HeatMappingItem } from '../services/heatMeterMapping.service';
+import { SerialMappingItem } from '../services/serialMapping.service';
 
 export interface QueueItem {
     meterId: string;
@@ -44,6 +45,8 @@ export interface UserSession {
 
     serialResourceType?: ResourceType;
     pendingSerialNumber?: string;
+    serialQueue: SerialMappingItem[];
+    serialCurrentIndex: number;
     heatQueue: HeatMappingItem[];
     heatCurrentIndex: number;
     pendingHeatSerialNumber?: string;
@@ -59,6 +62,8 @@ export function getSession(chatId: number): UserSession {
             currentIndex: 0,
             heatQueue: [],
             heatCurrentIndex: 0,
+            serialQueue: [],
+            serialCurrentIndex: 0,
         });
     }
 

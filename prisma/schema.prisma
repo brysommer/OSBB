@@ -92,6 +92,9 @@ model Meter {
   createdAt    DateTime  @default(now())
   resourceType String
   hiddenFromCollection Boolean @default(false)
+  askoeValidationStatus MeterAskoeValidationStatus @default(PENDING)
+  askoeValidatedAt      DateTime?
+  askoeValidationNote   String?
   premises     Premises  @relation(fields: [premisesId], references: [id])
   readings     Reading[]
   details      MeterDetail[]
@@ -182,4 +185,12 @@ enum ExportStatus {
   PENDING
   SENT
   ERROR
+}
+
+enum MeterAskoeValidationStatus {
+  PENDING
+  VALIDATED
+  ASSUMED
+  VALIDATED_NO_ANSWER
+  VALIDATION_FAILED
 }

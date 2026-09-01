@@ -19,9 +19,13 @@ import {
     handleSelfCorrect,
 } from './messages';
 import {
-    askSerialNumber,
-    handleSerialApartmentInput,
-    handleSerialNumberInput,
+    handleSerialConfirmMatch,
+    handleSerialManual,
+    handleSerialOcrConfirmation,
+    handleSerialPhoto,
+    handleSerialSkipAbsent,
+    handleSerialTextInput,
+    sendCurrentSerialMeter,
 } from './serialMapping.messages';
 import {
     handleHeatPhoto,
@@ -36,6 +40,7 @@ import {
     getHeatMappingQueue,
     isSynergiaGlass,
 } from '../services/heatMeterMapping.service';
+import { getSerialMappingQueue } from '../services/serialMapping.service';
 
 import dotenv from 'dotenv';
 import { registerPutReadingsHandler } from './handlers/putReadings.handler';
@@ -154,7 +159,10 @@ bot.on('callback_query', async (query) => {
         session.state = BotState.SELECT_COMPLEX;
         session.heatQueue = [];
         session.heatCurrentIndex = 0;
+        session.serialQueue = [];
+        session.serialCurrentIndex = 0;
         session.pendingHeatSerialNumber = undefined;
+        session.pendingSerialNumber = undefined;
 
         const complexes = (await getAvailableResidentialComplexes(chatId)).filter((complex) =>
             isSynergiaGlass(complex.name),
@@ -225,7 +233,10 @@ bot.on('callback_query', async (query) => {
         session.sectionNumber = undefined;
         session.heatQueue = [];
         session.heatCurrentIndex = 0;
+        session.serialQueue = [];
+        session.serialCurrentIndex = 0;
         session.pendingHeatSerialNumber = undefined;
+        session.pendingSerialNumber = undefined;
         session.state = BotState.SELECT_SECTION;
 
         const sections = await getSections(session.residentialComplexId!, building);
@@ -255,6 +266,8 @@ bot.on('callback_query', async (query) => {
             session.sectionNumber = undefined;
             session.heatQueue = [];
             session.heatCurrentIndex = 0;
+            session.serialQueue = [];
+            session.serialCurrentIndex = 0;
             session.pendingHeatSerialNumber = undefined;
 
             const sections = await getSections(
@@ -411,8 +424,40 @@ bot.on('callback_query', async (query) => {
 
         session.serialResourceType = resourceType as ResourceType;
         session.pendingSerialNumber = undefined;
+        session.serialQueue = await getSerialMappingQueue(
+            session.residentialComplexId,
+            session.buildingNumber,
+            session.sectionNumber,
+            session.serialResourceType,
+        );
+        session.serialCurrentIndex = 0;
 
-        await askSerialNumber(bot, chatId);
+        if (!session.serialQueue.length) {
+            await bot.sendMessage(chatId, '❌ У цьому підʼїзді немає лічильників обраного ресурсу');
+            return;
+        }
+
+        await sendCurrentSerialMeter(bot, chatId);
+        return;
+    }
+
+    if (data === 'serial_ocr_confirm') {
+        await handleSerialOcrConfirmation(bot, chatId, true);
+        return;
+    }
+
+    if (data === 'serial_confirm_match') {
+        await handleSerialConfirmMatch(bot, chatId);
+        return;
+    }
+
+    if (data === 'serial_skip_absent') {
+        await handleSerialSkipAbsent(bot, chatId);
+        return;
+    }
+
+    if (data === 'serial_manual') {
+        await handleSerialManual(bot, chatId);
         return;
     }
 
@@ -461,6 +506,16 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    if (
+        session.mode === 'SERIAL_MAPPING' &&
+        (session.state === BotState.INPUT_SERIAL_NUMBER ||
+            session.state === BotState.REVIEW_SERIAL_METER) &&
+        msg.photo
+    ) {
+        await handleSerialPhoto(bot, chatId, msg.photo);
+        return;
+    }
+
     if (!msg.text) return;
 
     if (session.state === BotState.INPUT_READING) {
@@ -468,13 +523,15 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (session.state === BotState.INPUT_SERIAL_NUMBER) {
-        await handleSerialNumberInput(bot, chatId, msg.text);
-        return;
-    }
-
-    if (session.state === BotState.INPUT_SERIAL_APARTMENT) {
-        await handleSerialApartmentInput(bot, chatId, msg.text);
+    if (
+        session.mode === 'SERIAL_MAPPING' &&
+        (session.state === BotState.INPUT_SERIAL_NUMBER ||
+            session.state === BotState.REVIEW_SERIAL_METER)
+    ) {
+        const trimmed = msg.text.trim();
+        if (/^\d+$/.test(trimmed.replace(/[\s-]+/g, ''))) {
+            await handleSerialTextInput(bot, chatId, msg.text);
+        }
         return;
     }
 

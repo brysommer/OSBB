@@ -50,7 +50,9 @@ async function sendDailyAskoeReport(bot: TelegramBot) {
             `АСКОЕ на ${date} о 10:00:
 Доступні лічильники: ${result.active} із ${result.total}
 Без відповіді: ${result.noAnswer}
-Привʼязані до ДАХ: ${result.matched}`,
+Привʼязані до ДАХ: ${result.matched}
+Прив'язка підтверджена: ${result.validated ?? 0}
+Не пройшли валідацію: ${result.validationFailed ?? 0}`,
         );
     } catch (error) {
         console.error('[ASKOE] Daily sync failed:', error);

@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "MeterAskoeValidationStatus" ADD VALUE 'VALIDATED_NO_ANSWER' AFTER 'VALIDATED';

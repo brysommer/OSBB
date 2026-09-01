@@ -6,6 +6,7 @@ import SftpClient from 'ssh2-sftp-client';
 import { Prisma } from '@prisma/client';
 
 import { prisma } from '../lib/prisma';
+import { validateMetersAgainstAskoe, dahPeriodFromSnapshotDate } from './askoeValidation.service';
 
 type AskoeRow = Record<string, unknown>;
 
@@ -17,6 +18,8 @@ export type AskoeImportResult = {
     noAnswer: number;
     matched: number;
     unmatched: number;
+    validated?: number;
+    validationFailed?: number;
 };
 
 function stringValue(value: unknown): string | undefined {
@@ -56,6 +59,17 @@ function parseSnapshotDate(fileName: string): Date {
 
     const now = new Date();
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function isAskoeHeatMeterSnapshot(fileName: string): boolean {
+    return /heat_meters_\d{2}\.\d{2}\.\d{4}/.test(fileName) && /\.(db|sqlite|sql)$/i.test(fileName);
+}
+
+function snapshotDateKey(fileName: string): string {
+    const match = fileName.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+    if (!match) return '';
+
+    return `${match[3]}-${match[2]}-${match[1]}`;
 }
 
 function readRequestedHeatMeters(filePath: string): AskoeRow[] {
@@ -178,7 +192,6 @@ async function downloadLatestAskoeFileViaSftp(): Promise<{
 
     const client = new SftpClient();
     const downloadDir = await getDownloadDir();
-    const prefix = process.env.ASKOE_SFTP_FILE_PREFIX || 'mcl_id_22_heat_meters_';
 
     try {
         await client.connect({
@@ -189,15 +202,11 @@ async function downloadLatestAskoeFileViaSftp(): Promise<{
         });
 
         const files = (await client.list(remoteDir))
-            .filter(
-                (file) =>
-                    file.type === '-' &&
-                    file.name.startsWith(prefix) &&
-                    /\.(db|sqlite|sql)$/i.test(file.name),
-            )
+            .filter((file) => file.type === '-' && isAskoeHeatMeterSnapshot(file.name))
             .sort(
                 (left, right) =>
-                    right.modifyTime - left.modifyTime || right.name.localeCompare(left.name),
+                    snapshotDateKey(right.name).localeCompare(snapshotDateKey(left.name)) ||
+                    right.name.localeCompare(left.name),
             );
         const latest = files[0];
 
@@ -226,8 +235,72 @@ async function downloadLatestAskoeFile() {
         : downloadLatestAskoeFileViaSftp();
 }
 
-export async function importLatestAskoeSnapshot(): Promise<AskoeImportResult> {
-    const { filePath, sourceFile } = await downloadLatestAskoeFile();
+async function downloadAskoeFileViaSftp(matcher: (fileName: string) => boolean): Promise<{
+    filePath: string;
+    sourceFile: string;
+}> {
+    const host = process.env.ASKOE_SFTP_HOST;
+    const user = process.env.ASKOE_SFTP_USER;
+    const password = process.env.ASKOE_SFTP_PASSWORD;
+    const remoteDir = process.env.ASKOE_SFTP_DIR;
+
+    if (!host || !user || !password || !remoteDir) {
+        throw new Error(
+            'ASKOE_SFTP_HOST, ASKOE_SFTP_USER, ASKOE_SFTP_PASSWORD and ASKOE_SFTP_DIR are required',
+        );
+    }
+
+    const client = new SftpClient();
+    const downloadDir = await getDownloadDir();
+
+    try {
+        await client.connect({
+            host,
+            port: Number(process.env.ASKOE_SFTP_PORT || 22),
+            username: user,
+            password,
+        });
+
+        const files = (await client.list(remoteDir))
+            .filter((file) => file.type === '-' && isAskoeHeatMeterSnapshot(file.name) && matcher(file.name))
+            .sort(
+                (left, right) =>
+                    snapshotDateKey(right.name).localeCompare(snapshotDateKey(left.name)) ||
+                    right.name.localeCompare(left.name),
+            );
+        const selected = files[0];
+
+        if (!selected) {
+            throw new Error('No ASKOE snapshot file found on SFTP for the requested date');
+        }
+
+        const safeLocalName = selected.name.replace(/[<>:"/\\|?*]/g, '-');
+        const localPath = path.join(downloadDir, safeLocalName);
+        const remotePath = `${remoteDir.replace(/\/+$/, '')}/${selected.name}`;
+
+        await client.fastGet(remotePath, localPath);
+
+        return {
+            filePath: localPath,
+            sourceFile: selected.name,
+        };
+    } finally {
+        await client.end().catch(() => undefined);
+    }
+}
+
+export async function downloadAskoeSnapshotForDate(dayMonthYear: string): Promise<{
+    filePath: string;
+    sourceFile: string;
+}> {
+    return downloadAskoeFileViaSftp((fileName) => fileName.includes(`heat_meters_${dayMonthYear}`));
+}
+
+export async function importAskoeSnapshotFromFile(
+    filePath: string,
+    sourceFile: string,
+    options?: { validate?: boolean },
+): Promise<AskoeImportResult> {
     const rows = await readAskoeRows(filePath);
 
     if (!rows.length) {
@@ -344,6 +417,15 @@ export async function importLatestAskoeSnapshot(): Promise<AskoeImportResult> {
         });
     }
 
+    const validatedMeters =
+        options?.validate === false
+            ? []
+            : await validateMetersAgainstAskoe({
+                  meterIds: [...meterBySerial.values()],
+                  snapshotDate,
+                  dahPeriod: dahPeriodFromSnapshotDate(snapshotDate),
+              });
+
     return {
         sourceFile,
         snapshotDate,
@@ -352,5 +434,24 @@ export async function importLatestAskoeSnapshot(): Promise<AskoeImportResult> {
         noAnswer,
         matched,
         unmatched: rows.length - matched,
+        validated: validatedMeters.filter((item) => item.status === 'VALIDATED').length,
+        validationFailed: validatedMeters.filter(
+            (item) => item.status === 'VALIDATION_FAILED',
+        ).length,
     };
+}
+
+export async function importAskoeSnapshotForDate(
+    dayMonthYear: string,
+    options?: { validate?: boolean },
+): Promise<AskoeImportResult> {
+    const { filePath, sourceFile } = await downloadAskoeSnapshotForDate(dayMonthYear);
+
+    return importAskoeSnapshotFromFile(filePath, sourceFile, options);
+}
+
+export async function importLatestAskoeSnapshot(): Promise<AskoeImportResult> {
+    const { filePath, sourceFile } = await downloadLatestAskoeFile();
+
+    return importAskoeSnapshotFromFile(filePath, sourceFile);
 }
