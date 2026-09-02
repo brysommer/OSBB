@@ -15,7 +15,8 @@
         "sync-building-sections": "ts-node src/scripts/sync-building-sections.ts",
         "test:privat24": "ts-node src/scripts/test-privat24.ts",
         "validate:askoe": "ts-node src/scripts/validate-askoe-meters.ts",
-        "assume:askoe": "ts-node src/scripts/assume-askoe-serials.ts"
+        "assume:askoe": "ts-node src/scripts/assume-askoe-serials.ts",
+        "ensure:user": "ts-node src/scripts/ensure-telegram-user.ts"
     },
     "prisma": {
         "schema": "prisma/schema.prisma"

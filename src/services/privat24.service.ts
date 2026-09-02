@@ -205,6 +205,59 @@ export function formatPrivat24Amount(amount: number, currency = 'UAH'): string {
     })} ${currency}`;
 }
 
+export function escapePrivat24Html(text: string): string {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+export function formatSignedPrivat24Amount(amount: number, currency = 'UAH'): string {
+    const absolute = formatPrivat24Amount(Math.abs(amount), currency);
+
+    if (amount > 0) {
+        return `+${absolute}`;
+    }
+
+    if (amount < 0) {
+        return `-${absolute}`;
+    }
+
+    return absolute;
+}
+
+export function formatBalanceChangeHtml(
+    delta: number,
+    currency = 'UAH',
+    label = 'від учора',
+): string {
+    if (Math.abs(delta) < 0.005) {
+        return `🟡 <b>без змін</b> <i>${label}</i>`;
+    }
+
+    const signed = formatSignedPrivat24Amount(delta, currency);
+
+    if (delta > 0) {
+        return `🟢 <b>${signed}</b> <i>${label}</i>`;
+    }
+
+    return `🔴 <b>${signed}</b> <i>${label}</i>`;
+}
+
+export function formatFlowChangeHtml(delta: number, currency = 'UAH'): string {
+    if (Math.abs(delta) < 0.005) {
+        return `🟡 <b>0,00 ${currency}</b>`;
+    }
+
+    const signed = formatSignedPrivat24Amount(delta, currency);
+
+    if (delta > 0) {
+        return `🟢 <b>${signed}</b>`;
+    }
+
+    return `🔴 <b>${signed}</b>`;
+}
+
 export function maskPrivat24Account(account: string): string {
     if (account.length <= 8) {
         return account;
