@@ -65,11 +65,38 @@ export async function saveReading(input: SaveReadingInput) {
     };
 }
 
-export function getCurrentPeriod(): string {
-    const now = new Date();
+/** З якого числа місяця обхід/подача вважаються вже наступним періодом ДАХ. */
+export const PERIOD_ROLLOVER_DAY = 27;
 
+/**
+ * Період для ДАХ завжди «1-ше число місяця нарахування».
+ *
+ * Збір може бути в кінці місяця (з PERIOD_ROLLOVER_DAY) або на початку наступного —
+ * обидва попадають в один і той самий період, щоб не було колізій при експорті.
+ *
+ * Приклади (rollover = 27):
+ * - 28.09 → 2026-10-01
+ * - 01.10 → 2026-10-01
+ * - 26.10 → 2026-10-01
+ * - 27.10 → 2026-11-01
+ */
+export function getCurrentPeriod(now = new Date()): string {
     const year = now.getFullYear();
-    const month = String(now.getMonth() + 2).padStart(2, '0');
+    const monthIndex = now.getMonth(); // 0–11
+    const day = now.getDate();
 
-    return `${year}-${month}-01`;
+    let periodYear = year;
+    let periodMonthIndex = monthIndex;
+
+    if (day >= PERIOD_ROLLOVER_DAY) {
+        periodMonthIndex += 1;
+        if (periodMonthIndex > 11) {
+            periodMonthIndex = 0;
+            periodYear += 1;
+        }
+    }
+
+    const month = String(periodMonthIndex + 1).padStart(2, '0');
+    return `${periodYear}-${month}-01`;
 }
+
